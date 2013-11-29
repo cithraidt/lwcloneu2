@@ -54,10 +54,6 @@
 #include "descriptors.h"
 
 
-#define USB_VENDOR_ID      0xFAFA
-#define USB_PRODUCT_ID     0x00F3        // this is used as the device identifier, 0x00F0 is '1' up to 0x00FF is '16'
-#define USB_VERSION_BCD    VERSION_BCD(01.00)
-
 #define USB_STRING_TABLE(_map_) \
 	_map_(ManufacturerString_id,  "n/a") \
 	_map_(ProductString_id,       "LWCloneU2 v1.0")
@@ -70,14 +66,14 @@ typedef enum {
 	#undef MAP
 } UsbStringsEnum;
 
-const USB_Descriptor_String_t PROGMEM LanguageString =
+static const USB_Descriptor_String_t PROGMEM LanguageString =
 {
 	.Header                 = {.Size = USB_STRING_LEN(1), .Type = DTYPE_String},
 	.UnicodeString          = {LANGUAGE_ID_ENG}
 };
 
 #define MAP(name, str) \
-const USB_Descriptor_String_t PROGMEM name##__str_ = \
+static const USB_Descriptor_String_t PROGMEM name##__str_ = \
 { \
 	.Header                 = {.Size = USB_STRING_LEN(sizeof(str) - 1), .Type = DTYPE_String}, \
 	.UnicodeString          = L##str \
@@ -95,7 +91,7 @@ USB_STRING_TABLE(MAP)
  
  #define GENERIC_REPORT_SIZE 8
 
-const USB_Descriptor_HIDReport_Datatype_t PROGMEM GenericReport[] =
+static const USB_Descriptor_HIDReport_Datatype_t PROGMEM GenericReport[] =
 {
 	HID_RI_USAGE_PAGE(16, 0xFF00), /* Vendor Page 0 */
 	HID_RI_USAGE(8, 0x01), /* Vendor Usage 1 */
@@ -115,13 +111,13 @@ const USB_Descriptor_HIDReport_Datatype_t PROGMEM GenericReport[] =
 	HID_RI_END_COLLECTION(0),
 };
 
-/** Device descriptor structure. This descriptor, located in FLASH memory, describes the overall
+/** Device descriptor structure. This descriptor describes the overall
  *  device characteristics, including the supported USB version, control endpoint size and the
  *  number of device configurations. The descriptor is read out by the USB host when the enumeration
  *  process begins.
  */
  
-const USB_Descriptor_Device_t PROGMEM DeviceDescriptor =
+static USB_Descriptor_Device_t DeviceDescriptor =
 {
 	.Header                 = {.Size = sizeof(USB_Descriptor_Device_t), .Type = DTYPE_Device},
 	.USBSpecification       = VERSION_BCD(01.10),
@@ -138,13 +134,18 @@ const USB_Descriptor_Device_t PROGMEM DeviceDescriptor =
 	.NumberOfConfigurations = FIXED_NUM_CONFIGURATIONS
 };
 
+void SetProductID(uint16_t id)
+{
+	DeviceDescriptor.ProductID = id;
+}
+
 /** Configuration descriptor structure. This descriptor, located in FLASH memory, describes the usage
  *  of the device in one of its supported configurations, including information about any device interfaces
  *  and endpoints. The descriptor is read out by the USB host during the enumeration process when selecting
  *  a configuration so that the host may correctly communicate with the USB device.
  */
  
-const USB_Descriptor_Configuration_t PROGMEM ConfigurationDescriptor =
+static const USB_Descriptor_Configuration_t PROGMEM ConfigurationDescriptor =
 {
 	.Config =
 	{
@@ -199,10 +200,16 @@ const USB_Descriptor_Configuration_t PROGMEM ConfigurationDescriptor =
 uint16_t CALLBACK_USB_GetDescriptor(
 	const uint16_t wValue,
 	const uint8_t wIndex,
-	const void** const DescriptorAddress)
+	const void** const DescriptorAddress,
+	uint8_t *const DescriptorMemorySpace)
 {
 	const uint8_t  DescriptorType   = (wValue >> 8);
 	const uint8_t  DescriptorNumber = (wValue & 0xFF);
+
+	uint8_t memspace;
+	uint8_t * const pmemspace = (DescriptorMemorySpace != NULL) ? DescriptorMemorySpace : &memspace;
+
+	*pmemspace = MEMSPACE_FLASH;
 
 	const void* Address = NULL;
 	uint16_t    Size    = NO_DESCRIPTOR;
@@ -210,6 +217,7 @@ uint16_t CALLBACK_USB_GetDescriptor(
 	switch (DescriptorType)
 	{
 		case DTYPE_Device:
+			*pmemspace = MEMSPACE_RAM;
 			Address = &DeviceDescriptor;
 			Size    = sizeof(USB_Descriptor_Device_t);
 			break;

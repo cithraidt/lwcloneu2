@@ -14,15 +14,16 @@
  * if not, write to the Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
 
+#include <stdint.h>
 #include <avr/io.h>
 #include <avr/sleep.h>
 #include <avr/interrupt.h>
 #include <avr/wdt.h>
 #include <avr/power.h>
+#include <avr/eeprom.h>
 #include <util/atomic.h>
 #include <util/delay.h>
-#include <string.h>
- 
+
 #include <LUFA/Drivers/USB/USB.h>
 #include "descriptors.h"
 
@@ -31,10 +32,29 @@
 #include "led.h"
 
 
+#define LWCCONFIG_CMD_SETID 65
+
+#define LWC_CONFIG_IDENTIFIER 0xA62817B2   // some magic number
+#define OFFSET_OF(_struct_, _member_) (((uint8_t*)&(((_struct_*)NULL)->_member_)) - (uint8_t*)NULL)
+
+typedef struct {
+	uint32_t id; 
+	uint8_t ledwiz_id;
+	uint8_t reserved[7];
+} lwc_config_t;
+
+static struct {
+	uint8_t reserved[16];
+	uint8_t configdata[sizeof(lwc_config_t)];
+} g_eeprom_table EEMEM;
+
+
 static void hardware_init(void);
 static void main_task(void);
 static uint8_t* buffer_lock(void);
 static void buffer_unlock(void);
+static void hardware_restart(void);
+static void configure_device(void);
 
 
 // Main program entry point. This routine configures the hardware required by the application, then
@@ -59,11 +79,11 @@ int main(void)
 
 static void hardware_init(void)
 {
-	/* Disable watchdog if enabled by bootloader/fuses */
+	// Disable watchdog if enabled by bootloader/fuses
 	MCUSR &= ~(1 << WDRF);
 	wdt_disable();
 
-	/* Disable clock division */
+	// Disable clock division
 	clock_prescale_set(clock_div_1);
 
 	set_sleep_mode(SLEEP_MODE_IDLE);
@@ -71,6 +91,31 @@ static void hardware_init(void)
 	// initialize LED driver and UART
 	comm_init();
 	led_init();
+
+	// config
+	configure_device();
+}
+
+
+// load current configuration from eeprom and set USB product ID
+
+static void configure_device(void)
+{
+	lwc_config_t cfg;
+	eeprom_read_block((void*)&cfg, g_eeprom_table.configdata, sizeof(cfg));
+
+	if (cfg.id != LWC_CONFIG_IDENTIFIER)
+	{
+		memset(&cfg, 0x00, sizeof(cfg));
+		cfg.id = LWC_CONFIG_IDENTIFIER;
+		cfg.ledwiz_id = USB_PRODUCT_ID & 0x0F;
+
+		eeprom_write_block((void*)&cfg, g_eeprom_table.configdata, sizeof(cfg));
+	}
+
+	// set USB product ID
+	uint16_t const product_id = (USB_PRODUCT_ID & ~0x000F) | (cfg.ledwiz_id & 0x0F);
+	SetProductID(product_id);
 }
 
 
@@ -98,7 +143,7 @@ void EVENT_USB_Device_Disconnect(void)
 
 void EVENT_USB_Device_ConfigurationChanged(void)
 {
-	/* Setup HID Report Endpoint */
+	// Setup HID Report Endpoint
 
 	Endpoint_ConfigureEndpoint(
 		GENERIC_IN_EPADDR,
@@ -113,7 +158,7 @@ void EVENT_USB_Device_ConfigurationChanged(void)
  
 void EVENT_USB_Device_ControlRequest(void)
 {
-	/* Handle HID Class specific requests */
+	// Handle HID Class specific requests
 	switch (USB_ControlRequest.bRequest)
 	{
 	case HID_REQ_GetReport:
@@ -123,7 +168,7 @@ void EVENT_USB_Device_ControlRequest(void)
 
 			uint8_t zero = 0;
 
-			/* Write one 'zero' byte report data to the control endpoint */
+			// Write one 'zero' byte report data to the control endpoint
 			Endpoint_Write_Control_Stream_LE(&zero, 1);
 			Endpoint_ClearOUT();
 		}
@@ -138,11 +183,32 @@ void EVENT_USB_Device_ControlRequest(void)
 
 			if (pdata != NULL)
 			{
-				/* Read the report data from the control endpoint */
+				// Read the report data from the control endpoint
 				Endpoint_Read_Control_Stream_LE(pdata, 8);
 
 				DbgOut(DBGINFO, "HID_REQ_SetReport: %02x%02x%02x%02x%02x%02x%02x%02x", 
 					pdata[0], pdata[1], pdata[2], pdata[3], pdata[4], pdata[5], pdata[6], pdata[7]);
+
+				// if this is a special command to set the ledwiz ID, execute it
+				if (pdata[0] == LWCCONFIG_CMD_SETID)
+				{
+					const uint8_t id = pdata[1];
+					const uint8_t check = ~id;
+
+					if (pdata[2] == 0xFF &&
+					    pdata[3] == 0xFF &&
+					    pdata[4] == 0xFF &&
+					    pdata[5] == 0xFF &&
+					    pdata[6] == 0xFF &&
+					    pdata[7] == check)
+					{
+						eeprom_update_byte(
+							&g_eeprom_table.configdata[0] + OFFSET_OF(lwc_config_t, ledwiz_id),
+							id & 0x0F);
+
+						hardware_restart();
+					}
+				}
 
 				buffer_unlock();
 			}
@@ -155,6 +221,25 @@ void EVENT_USB_Device_ControlRequest(void)
 		}
 		break;
 	}
+}
+
+
+static void hardware_restart(void)
+{
+	// detach from the bus
+	USB_Disable();
+	USB_Detach();
+
+	// Disable all interrupts
+	cli();
+
+	// Wait some time for the USB detachment to register on the host
+	_delay_ms(250);
+
+	// force a reset via watchdog timeout
+	wdt_enable(WDTO_15MS);
+
+	for (;;) {;}
 }
 
 
