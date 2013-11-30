@@ -75,6 +75,11 @@ int main(int argc, char* argv[])
 {
 	// parse arguments
 
+	if (argc <= 1) {
+		usage();
+		return 0;
+	}
+
 	const char * p_arg = NULL;
 	const char * id_arg = NULL;
 	int err = 0;
@@ -165,9 +170,9 @@ int main(int argc, char* argv[])
 
 	// reprogram new id
 
-	if (id_arg && p_arg && g_main.devlist.numdevices > 0)
+	if (p_arg && g_main.devlist.numdevices > 0)
 	{
-		int const id_old = atoi(id_arg);
+		int const id_old = (id_arg != NULL) ? atoi(id_arg) : g_main.devlist.handles[0];
 		int const id_new = atoi(p_arg);
 
 		if (id_new < 1 || id_new >= 32 || id_new == id_old)

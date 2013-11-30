@@ -154,20 +154,21 @@ static DWORD WINAPI MyThreadProc(LPVOID lpParameter)
 
 	// create a hidden window, so we get a 'HWND' for the ledwiz driver and 
 	// we can do the other stuff from the window proc
+	{
+		WNDCLASSEXA wx = {};
+		wx.cbSize = sizeof(WNDCLASSEXA);
+		wx.lpfnWndProc = MyWndProc; 
+		wx.hInstance = GetModuleHandle(NULL);
+		wx.lpszClassName = "LWCloneU2";
 
-	WNDCLASSEXA wx = {};
-	wx.cbSize = sizeof(WNDCLASSEXA);
-	wx.lpfnWndProc = MyWndProc; 
-	wx.hInstance = GetModuleHandle(NULL);
-	wx.lpszClassName = "LWCloneU2";
+		if (!RegisterClassExA(&wx))
+			goto Failed;
 
-	if (!RegisterClassExA(&wx))
-		goto Failed;
+		HWND hwnd = CreateWindowExA(0, wx.lpszClassName, "LWCloneU2 TestApp Hidden Window", 0, 0, 0, 0, 0, HWND_MESSAGE, NULL, NULL, NULL);
 
-	HWND hwnd = CreateWindowExA(0, wx.lpszClassName, "LWCloneU2 TestApp Hidden Window", 0, 0, 0, 0, 0, HWND_MESSAGE, NULL, NULL, NULL);
-
-	if (hwnd == NULL)
-		goto Failed;
+		if (hwnd == NULL)
+			goto Failed;
+	}
 
 	// set the console handler to handle the crtl-c and exit clicks
 
