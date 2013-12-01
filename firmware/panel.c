@@ -31,6 +31,7 @@
 
 #include <hwconfig.h>
 #include "panel.h"
+#include "keydefs.h"
 
 
 #if !defined(PANEL_TIMER_vect)
