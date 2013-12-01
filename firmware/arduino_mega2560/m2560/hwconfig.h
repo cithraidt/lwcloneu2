@@ -17,6 +17,9 @@
 #ifndef HWCONFIG_H__INCLUDED
 #define HWCONFIG_H__INCLUDED
 
+#include <stdint.h>
+#include <avr/io.h>
+
 #if (F_CPU != 16000000)
 #error "invalid CPU clock frequency ==> should be 16 MHZ"
 #endif
@@ -42,6 +45,22 @@ static void inline led_timer_init(void)
 	TCCR0B = _BV(CS01) |_BV(CS00); // prescale 64
 	TIMSK0 = _BV(OCIE0A); // enable Output Compare 0 overflow interrupt
 	TCNT0 = 0x00;
+}
+
+
+/****************************************
+ Panel config
+****************************************/
+
+#define PANEL_TIMER_vect TIMER1_COMPA_vect
+
+static void inline panel_timer_init(void)
+{
+	const int T1_CYCLE_US = 1000;
+	OCR1A = (((T1_CYCLE_US * (F_CPU / 1000L)) / (64 * 1000L)) - 1);
+	TCCR1B = _BV(WGM12) | _BV(CS11) |_BV(CS10); //  clear timer/counter on compare1 match, prescale 64
+	TIMSK1 = _BV(OCIE1A); // enable Output Compare 1 overflow interrupt
+	TCNT1 = 0x00;
 }
 
 

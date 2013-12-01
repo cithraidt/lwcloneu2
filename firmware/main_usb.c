@@ -30,6 +30,7 @@
 #include <hwconfig.h>
 #include "comm.h"
 #include "led.h"
+#include "panel.h"
 
 
 #define LWCCONFIG_CMD_SETID 65
@@ -88,9 +89,10 @@ static void hardware_init(void)
 
 	set_sleep_mode(SLEEP_MODE_IDLE);
 
-	// initialize LED driver and UART
+	// initialize LED driver and UART and panel
 	comm_init();
 	led_init();
+	panel_init();
 
 	// config
 	configure_device();

@@ -16,18 +16,22 @@
 
 #include <stdlib.h>
 #include <stdio.h>
+#include <string.h>
 #include <avr/io.h>
 #include <avr/interrupt.h>
 #include <avr/sleep.h>
 
-#include "led.h"
+#include <hwconfig.h>
 #include "comm.h"
+#include "led.h"
+#include "panel.h"
 
 
 int main(void)
 {
 	comm_init();
 	led_init();
+	panel_init();
 
 	set_sleep_mode(SLEEP_MODE_IDLE);
 
@@ -37,36 +41,67 @@ int main(void)
 
 	for (;;)
 	{
-		// wait for data
+		// process LED messages
 
-		msg_t * pmsg;
+		#if defined(LED_TIMER_vect)
 
-		for (;;) 
+		msg_t * const prxmsg = msg_recv();
+
+		if (prxmsg != NULL)
 		{
-			pmsg = msg_recv();
+			DbgOut(DBGINFO, "main_led, message received");
 
-			if (pmsg != NULL)
-				break;
+			// is the message valid?
 
-			sleep_mode();
+			if (prxmsg->nlen != 8)
+			{
+				DbgOut(DBGERROR, "main_led, invalid framesize");
+				msg_release();
+			}
+			else
+			{
+				// process the data
+
+				led_update(&prxmsg->data[0]);
+				msg_release();
+			}
 		}
 
-		DbgOut(DBGINFO, "main_led, message received");
+		#endif
 
-		// is the message valid?
+		// process panel changes
 
-		if (pmsg->nlen != 8)
+		#if defined(PANEL_TIMER_vect)
+
+		static uint16_t time_next_ms = 0;
+		uint16_t time_curr_ms = panel_gettime_ms();
+		const uint16_t DELTA_TIME_PANEL_REPORT_MS = 5;
+
+		if (((int16_t)time_curr_ms - (int16_t)time_next_ms) >= 0)
 		{
-			DbgOut(DBGERROR, "main_led, invalid framesize");
-			msg_release();
-			continue;
+			time_next_ms = time_curr_ms + DELTA_TIME_PANEL_REPORT_MS;
+
+			panel_ScanInput();
+
+			msg_t * const ptxmsg = msg_prepare();
+
+			if (ptxmsg != NULL)
+			{
+				uint8_t nlen = 0;
+				uint8_t * pdata = panel_GetNextReport(&nlen);
+			
+				if (pdata != NULL && nlen <= sizeof(ptxmsg->data))
+				{
+					memcpy(&ptxmsg->data[0], pdata, nlen);
+					ptxmsg->nlen = nlen;
+					msg_send();
+				}
+			}
 		}
 
-		// process the data
+		#endif
 
-		led_update(&pmsg->data[0]);
-
-		msg_release();
+		sleep_mode();
 	}
 
 	return 0;
