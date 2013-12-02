@@ -26,18 +26,6 @@
 #define KEYDEFS_H__INCLUDED
 
 
-enum ReportIds
-{
-	ID_Unknown = 0,
-	ID_Keyboard,
-	ID_Consumer,
-	ID_Joystick1,
-	ID_Joystick2,
-	ID_Joystick3,
-	ID_Joystick4,
-	ID_Mouse
-};
-
 enum KeyboardCodes
 {
 	KEY_reserved = 0,

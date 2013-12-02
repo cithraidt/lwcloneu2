@@ -25,6 +25,8 @@
 #error "invalid CPU type ==> should be atmega8u2/16u2/32u2"
 #endif
 
+#include "../usbconfig.h"
+
 
 /****************************************
  Data UART config
@@ -56,7 +58,7 @@ static void inline exit_bootloader_stk500v2(void)
 	UCSR1A |= (1 << U2X1);
 	UCSR1B |= (1 << TXEN1);
 
-	_delay_ms(70); // wait until the uC is active (65ms + 14CK with LFUSE=0xFF) and waits for data
+	_delay_ms(70); // wait until the uC is active (worst case: 65ms + 14CK with LFUSE=0xFF) and waits for data
 
 	#define SEND(_b_) do { \
 		loop_until_bit_is_set(UCSR1A, UDRE1); \

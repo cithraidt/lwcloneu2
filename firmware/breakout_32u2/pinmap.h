@@ -15,18 +15,40 @@
  */
 
 #define LED_MAPPING_TABLE(_map_) \
-	_map_( C, 2, 0 ) \
-	_map_( C, 4, 0 ) \
-	_map_( C, 5, 0 ) \
-	_map_( C, 6, 1 ) \
-	_map_( C, 7, 1 ) \
-	_map_( D, 0, 1 ) \
-	_map_( D, 1, 1 ) \
-	_map_( D, 2, 0 ) \
-	_map_( D, 3, 0 ) \
-	_map_( D, 4, 0 ) \
-	_map_( D, 5, 0 ) \
+	\
+	_map_( B, 3, 0 ) \
+	_map_( B, 2, 0 ) \
+	_map_( B, 1, 0 ) \
 	_map_( D, 6, 0 ) \
-	_map_( D, 7, 0 )
+	_map_( D, 7, 0 ) \
+	_map_( B, 0, 0 ) \
+	\
+	/* end */
 
 
+
+#define SHIFT_SWITCH_INDEX  3
+
+#define MULTIFIRE_INDEX  7     // if this key is pressed once, it will result in 'MULTIFIRE_COUNT' presses
+#define MULTIFIRE_COUNT  5     // usefull for coin trigger that should give more than one credit
+
+#define PANEL_MAPPING_TABLE(_map_) \
+	\
+	_map_( D, 0, KEY_1,       KEY_Tab          ) \
+	_map_( D, 1, J1_Button1,  KEY_Esc          ) \
+	_map_( D, 2, KEY_2,       KEY_P            ) \
+	_map_( D, 3, 0,           0                ) \
+	_map_( D, 4, 0,           0                ) \
+	_map_( D, 5, 0,           0                ) \
+	_map_( B, 6, KEY_5,       KEY_5            ) \
+	_map_( B, 7, KEY_5,       KEY_5            ) \
+	_map_( C, 5, J1_Button2,  J1_Button2       ) \
+	_map_( C, 4, J1_Right,    KEY_Equal        ) \
+	_map_( C, 7, J1_Left,     KEY_Minus        ) \
+	_map_( C, 2, J1_Down,     AC_VolumeDown    ) \
+	_map_( C, 6, 0,           0                ) \
+	_map_( B, 5, J1_Up,       AC_VolumeUp      ) \
+	_map_( B, 4, 0,           0                )
+	\
+	/* end */
+	

@@ -36,9 +36,7 @@
 
 #if !defined(PANEL_TIMER_vect)
 	void panel_init(void) {}
-	void panel_ScanInput(void) {}
-	uint16_t panel_gettime_ms(void) { return 0; }
-	uint8_t * panel_GetNextReport(uint8_t *psize) { return NULL; }
+	uint8_t panel_get_report(uint8_t **ppdata) { return 0; }
 #else
 
 
@@ -50,9 +48,11 @@ enum {
 	PANEL_MAPPING_TABLE(MAP)
 	NUMBER_OF_INPUTS,
 	#undef MAP
+	#if defined(LED_MAPPING_TABLE)
 	#define MAP(X, pin, inv) X##pin##_index,
 	LED_MAPPING_TABLE(MAP)
 	#undef MAP
+	#endif
 };
 
 static uint8_t ReportBuffer[8];
@@ -63,12 +63,12 @@ static uint8_t need_key_update = 0;
 static uint8_t need_consumer_update = 0;
 static uint16_t global_time_ms = 0;
 
-#if (NR_OF_JOYSTICKS >= 1)
-static uint8_t need_joystick_update[NR_OF_JOYSTICKS];
+#if (NUM_JOYSTICKS >= 1)
+static uint8_t need_joystick_update[NUM_JOYSTICKS];
 static uint8_t last_joystick_update = ID_Joystick1;
 #endif
 
-#if defined(MOUSE_DEVICE)
+#if (USE_MOUSE != 0)
 static uint8_t need_mouse_update = 0;
 static uint8_t mouse_x_last_clk_state = 0;
 static uint8_t mouse_x_last_dir_state = 0;
@@ -108,7 +108,7 @@ static uint8_t IsConsumerCode(uint8_t key) { return (key >= AC_VolumeUp) && (key
 static uint8_t GetKey(uint8_t index) { return (shift_key != 0) ? GetKeyShiftMap(index) : GetKeyNormalMap(index); }
 
 
-#if (NR_OF_JOYSTICKS >= 1)
+#if (NUM_JOYSTICKS >= 1)
 
 static uint8_t IsJoystickCode(uint8_t key, uint8_t joy)
 {
@@ -121,7 +121,7 @@ static uint8_t NeedJoystickUpdate(void)
 {
 	uint8_t i;
 
-	for (i = 0; i < NR_OF_JOYSTICKS; i++)
+	for (i = 0; i < NUM_JOYSTICKS; i++)
 	{
 		if (need_joystick_update[i]) {
 			return 1;
@@ -134,7 +134,7 @@ static uint8_t NeedJoystickUpdate(void)
 #endif
 
 
-#if defined(MOUSE_DEVICE)
+#if (USE_MOUSE != 0)
 
 static uint8_t IsMouseButtonCode(uint8_t key)
 {
@@ -228,7 +228,7 @@ static uint8_t NeedMouseUpdate(void) { return need_mouse_update; }
 
 void panel_init(void)
 {
-	#if (NR_OF_JOYSTICKS >= 1)
+	#if (NUM_JOYSTICKS >= 1)
 	memset(&need_joystick_update[0], 0x00, sizeof(need_joystick_update));
 	#endif
 
@@ -252,18 +252,18 @@ static void SetNeedUpdate(uint8_t index)
 	{
 		need_key_update = 1;
 	}
-	#if defined(MOUSE_DEVICE)
+	#if (USE_MOUSE != 0)
 	else if (IsMouseButtonCode(key))
 	{
 		need_mouse_update = 1;
 	}
 	#endif
-	#if (NR_OF_JOYSTICKS >= 1)
+	#if (NUM_JOYSTICKS >= 1)
 	else
 	{
 		uint8_t i;
 
-		for (i = 0; i < NR_OF_JOYSTICKS; i++)
+		for (i = 0; i < NUM_JOYSTICKS; i++)
 		{
 			if (IsJoystickCode(key, i))
 			{
@@ -302,11 +302,11 @@ static void ShiftKeyCleanUp(void)
 	{
 		bool no_update = !need_consumer_update && !need_key_update;
 
-		#if defined(MOUSE_DEVICE)
+		#if (USE_MOUSE != 0)
 		no_update = no_uptdate && !NeedMouseUpdate();
 		#endif
 
-		#if (NR_OF_JOYSTICKS >= 1)
+		#if (NUM_JOYSTICKS >= 1)
 		no_update = no_update && !NeedJoystickUpdate();
 		#endif
 
@@ -322,17 +322,17 @@ static uint8_t NeedUpdate(void)
 {
 	ShiftKeyCleanUp();
 
-	#if (NR_OF_JOYSTICKS >= 1)
+	#if (NUM_JOYSTICKS >= 1)
 	if (NeedJoystickUpdate())
 	{
 		uint8_t i;
 		uint8_t x = last_joystick_update - ID_Joystick1;
 
-		for (i = 0; i < NR_OF_JOYSTICKS; i++)
+		for (i = 0; i < NUM_JOYSTICKS; i++)
 		{
 			x++;
 
-			if (x >= NR_OF_JOYSTICKS) {
+			if (x >= NUM_JOYSTICKS) {
 				x = 0;
 			}
 
@@ -347,7 +347,7 @@ static uint8_t NeedUpdate(void)
 	}
 	#endif
 
-	#if defined(MOUSE_DEVICE)
+	#if (USE_MOUSE != 0)
 	if (need_mouse_update)
 	{
 		need_mouse_update = 0;
@@ -372,7 +372,7 @@ static uint8_t NeedUpdate(void)
 
 static void SetInputCount(uint8_t index, uint8_t condition)
 {
-	#if defined(MOUSE_DEVICE)
+	#if (USE_MOUSE != 0)
 	if ((index == MOUSE_X_CLK_INDEX) || (index == MOUSE_X_DIR_INDEX) ||
 		(index == MOUSE_Y_CLK_INDEX) || (index == MOUSE_Y_DIR_INDEX))
 	{
@@ -496,7 +496,7 @@ void panel_ScanInput(void)
 	PANEL_MAPPING_TABLE(MAP)
 	#undef MAP
 
-	#if defined(MOUSE_DEVICE)
+	#if (USE_MOUSE != 0)
 	CheckMouseUpdate();
 	#endif
 }
@@ -574,7 +574,7 @@ static uint8_t ReportKeyboard(void)
 	return sizeof(ReportBuffer);
 }
 
-#if (NR_OF_JOYSTICKS >= 1)
+#if (NUM_JOYSTICKS >= 1)
 
 static uint8_t ReportJoystick(uint8_t id)
 {
@@ -633,7 +633,7 @@ static uint8_t ReportJoystick(uint8_t id)
 #endif
 
 
-#if defined(MOUSE_DEVICE)
+#if (USE_MOUSE != 0)
 
 static uint8_t ReportMouse(void)
 {
@@ -669,13 +669,17 @@ static uint8_t BuildReport(uint8_t id)
 {
 	switch (id)
 	{
+	#if (USE_KEYBOARD != 0)
 	case ID_Keyboard:
 		return ReportKeyboard();
+	#endif
 
+	#if (USE_CONSUMER != 0)
 	case ID_Consumer:
 		return ReportConsumer();
+	#endif
 
-	#if (NR_OF_JOYSTICKS >= 1)
+	#if (NUM_JOYSTICKS >= 1)
 	case ID_Joystick4:
 	case ID_Joystick3:
 	case ID_Joystick2:
@@ -683,7 +687,7 @@ static uint8_t BuildReport(uint8_t id)
 		return ReportJoystick(id);
 	#endif
 
-	#if defined(MOUSE_DEVICE)
+	#if (USE_MOUSE != 0)
 	case ID_Mouse:
 		return ReportMouse();
 	#endif
@@ -695,35 +699,7 @@ static uint8_t BuildReport(uint8_t id)
 	return 0;
 }
 
-
-uint8_t * panel_GetNextReport(uint8_t *psize)
-{
-	uint8_t id = NeedUpdate();
-
-	if (id == ID_Unknown) {
-		return NULL;
-	}
-
-	uint8_t ndata = BuildReport(id);
-
-	if (ndata <= 0) {
-		return NULL;
-	}
-
-	if (psize != NULL)
-	    psize[0] = ndata;
-	
-	return ReportBuffer;
-}
-
-
-ISR(PANEL_TIMER_vect)
-{
-	global_time_ms += 1;
-}
-
-
-uint16_t panel_gettime_ms(void)
+static uint16_t gettime_ms(void)
 {
 	uint16_t t0;
 
@@ -734,5 +710,44 @@ uint16_t panel_gettime_ms(void)
 
 	return t0;
 }
+
+uint8_t panel_get_report(uint8_t **ppdata)
+{
+	if (ppdata == NULL) {
+		return 0;
+	}
+
+	static uint16_t time_next_ms = 0;
+	uint16_t const time_curr_ms = gettime_ms();
+
+	const uint16_t DELTA_TIME_PANEL_REPORT_MS = 5;
+
+	if (((int16_t)time_curr_ms - (int16_t)time_next_ms) < 0) {
+		return 0;
+	}
+
+	time_next_ms = time_curr_ms + DELTA_TIME_PANEL_REPORT_MS;
+
+	panel_ScanInput();
+
+	uint8_t const id = NeedUpdate();
+
+	if (id == ID_Unknown) {
+		return 0;
+	}
+
+	uint8_t const ndata = BuildReport(id);
+	*ppdata = ReportBuffer;
+
+	return ndata;
+}
+
+
+ISR(PANEL_TIMER_vect)
+{
+	global_time_ms += 1;
+}
+
+
 
 #endif

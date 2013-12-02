@@ -14,36 +14,20 @@
  * if not, write to the Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
 
-/* Name: hid_input.h
- * Project: V-USB Mame Panel
- * Author: Andreas Oberdorfer
- * Creation Date: 2009-09-19
- * Copyright 2009 - 2011 Andreas Oberdorfer
- * License: GNU GPL v2 (see License.txt) or proprietary (CommercialLicense.txt)
- */
-
-#ifndef PANEL_H__INCLUDED
-#define PANEL_H__INCLUDED
-
-#include <stdint.h>
+#ifndef USBCONFIG_H__INCLUDED
+#define USBCONFIG_H__INCLUDED
 
 
-enum ReportIds
-{
-	ID_Unknown = 0,
-	ID_Keyboard,
-	ID_Consumer,
-	ID_Joystick1,
-	ID_Joystick2,
-	ID_Joystick3,
-	ID_Joystick4,
-	ID_Mouse
-};
+/****************************************
+ USB device config
+****************************************/
 
+#define USB_VENDOR_ID      0xFAFA
+#define USB_PRODUCT_ID     0x00F3        // this is used as the device identifier, 0x00F0 is '1' up to 0x00FF is '16'
+#define USB_VERSION_BCD    VERSION_BCD(01.00)
 
-void panel_init(void);
-uint8_t panel_get_report(uint8_t **ppdata);
+#define ENABLE_LED_DEVICE
 
 
 
-#endif  // PANEL_H__INCLUDED
+#endif

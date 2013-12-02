@@ -25,12 +25,15 @@
 #error "invalid CPU type ==> should be ATMega32u4"
 #endif
 
+#include "usbconfig.h"
+#include "pinmap.h"
+
 
 /****************************************
  LED driver config
 ****************************************/
 
-#include "pinmap.h"
+#if defined(ENABLE_LED_DEVICE)
 
 #define LED_TIMER_vect TIMER0_COMPA_vect
 
@@ -43,6 +46,8 @@ static void inline led_timer_init(void)
 	TIMSK0 = _BV(OCIE0A); // enable Output Compare 0 overflow interrupt
 	TCNT0 = 0x00;
 }
+
+#endif
 
 
 /****************************************

@@ -56,15 +56,14 @@ int main(void)
 			if (prxmsg->nlen != 8)
 			{
 				DbgOut(DBGERROR, "main_led, invalid framesize");
-				msg_release();
 			}
 			else
 			{
 				// process the data
-
 				led_update(&prxmsg->data[0]);
-				msg_release();
 			}
+
+			msg_release();
 		}
 
 		#endif
@@ -73,29 +72,22 @@ int main(void)
 
 		#if defined(PANEL_TIMER_vect)
 
-		static uint16_t time_next_ms = 0;
-		uint16_t time_curr_ms = panel_gettime_ms();
-		const uint16_t DELTA_TIME_PANEL_REPORT_MS = 5;
+		uint8_t * pdata = NULL;
+		uint8_t const ndata = panel_get_report(&pdata);
 
-		if (((int16_t)time_curr_ms - (int16_t)time_next_ms) >= 0)
+		if (ndata > 0)
 		{
-			time_next_ms = time_curr_ms + DELTA_TIME_PANEL_REPORT_MS;
-
-			panel_ScanInput();
-
 			msg_t * const ptxmsg = msg_prepare();
 
 			if (ptxmsg != NULL)
 			{
-				uint8_t nlen = 0;
-				uint8_t * pdata = panel_GetNextReport(&nlen);
-			
-				if (pdata != NULL && nlen <= sizeof(ptxmsg->data))
-				{
-					memcpy(&ptxmsg->data[0], pdata, nlen);
-					ptxmsg->nlen = nlen;
-					msg_send();
-				}
+				memcpy(&ptxmsg->data[0], pdata, ndata);
+				ptxmsg->nlen = ndata;
+				msg_send();
+			}
+			else
+			{
+				DbgOut(DBGERROR, "main_led, tx buffer overflow");
 			}
 		}
 

@@ -123,7 +123,67 @@ static void configure_device(void)
 
 static void main_task(void)
 {
-	// for now nothing to do here
+#if defined(ENABLE_PANEL_DEVICE)
+
+	/* Device must be connected and configured */
+	if (USB_DeviceState != DEVICE_STATE_Configured) {
+		return;
+	}
+
+	/* Select the Joystick Report Endpoint */
+	Endpoint_SelectEndpoint(PANEL_EPADDR);
+
+	/* Check to see if the host is ready for another packet */
+	if (!Endpoint_IsINReady())
+		return;
+
+	#if defined(DATA_RX_UART_vect)
+
+	msg_t * const pmsg = msg_recv();
+
+	if (pmsg != NULL)
+	{
+		DbgOut(DBGINFO, "main_usb, message received");
+
+		// is the message valid?
+
+		if (pmsg->nlen < 2 || pmsg->nlen > 8)
+		{
+			DbgOut(DBGERROR, "main_led, invalid framesize");
+		}
+		else
+		{
+			/* Write Joystick Report Data */
+			Endpoint_Write_Stream_LE(&pmsg->data[0], pmsg->nlen, NULL);
+
+			/* Finalize the stream transfer to send the last packet */
+			Endpoint_ClearIN();
+		}
+
+		msg_release();
+	}
+
+	#elif defined(PANEL_TIMER_vect)
+
+	uint8_t * pdata;
+	uint8_t const ndata = panel_get_report(&pdata);
+
+	if (ndata > 0)
+	{
+		/* Write Joystick Report Data */
+		Endpoint_Write_Stream_LE(pdata, ndata, NULL);
+
+		/* Finalize the stream transfer to send the last packet */
+		Endpoint_ClearIN();
+	}
+
+	#else
+
+	#error "invalid configuration, panel is enabled but no uart-rx-ISR or panel-timer-ISR"
+
+	#endif
+
+#endif
 }
 
 
@@ -147,11 +207,12 @@ void EVENT_USB_Device_ConfigurationChanged(void)
 {
 	// Setup HID Report Endpoint
 
-	Endpoint_ConfigureEndpoint(
-		GENERIC_IN_EPADDR,
-		EP_TYPE_INTERRUPT,
-		GENERIC_EPSIZE,
-		1);
+	#if defined(ENABLE_LED_DEVICE)
+	Endpoint_ConfigureEndpoint(LED_EPADDR, EP_TYPE_INTERRUPT, LED_EPSIZE, 1);
+	#endif
+	#if defined(ENABLE_PANEL_DEVICE)
+	Endpoint_ConfigureEndpoint(PANEL_EPADDR, EP_TYPE_INTERRUPT, PANEL_EPSIZE, 1);
+	#endif
 }
 
 // Event handler for the USB_ControlRequest event. This is used to catch and process control requests sent to
@@ -176,6 +237,7 @@ void EVENT_USB_Device_ControlRequest(void)
 		}
 		break;
 
+	#if defined(ENABLE_LED_DEVICE)
 	case HID_REQ_SetReport:
 		if (USB_ControlRequest.bmRequestType == (REQDIR_HOSTTODEVICE | REQTYPE_CLASS | REQREC_INTERFACE))
 		{
@@ -222,6 +284,7 @@ void EVENT_USB_Device_ControlRequest(void)
 			Endpoint_ClearIN();
 		}
 		break;
+	#endif
 	}
 }
 

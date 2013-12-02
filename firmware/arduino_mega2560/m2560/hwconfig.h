@@ -28,12 +28,15 @@
 #error "invalid CPU type ==> should be ATMega2560"
 #endif
 
+#include "../usbconfig.h"
+#include "pinmap.h"
+
 
 /****************************************
  LED driver config
 ****************************************/
 
-#include "pinmap.h"
+#if defined(ENABLE_LED_DEVICE)
 
 #define LED_TIMER_vect TIMER0_COMPA_vect
 
@@ -47,10 +50,14 @@ static void inline led_timer_init(void)
 	TCNT0 = 0x00;
 }
 
+#endif
+
 
 /****************************************
  Panel config
 ****************************************/
+
+#if defined(ENABLE_PANEL_DEVICE)
 
 #define PANEL_TIMER_vect TIMER1_COMPA_vect
 
@@ -62,6 +69,8 @@ static void inline panel_timer_init(void)
 	TIMSK1 = _BV(OCIE1A); // enable Output Compare 1 overflow interrupt
 	TCNT1 = 0x00;
 }
+
+#endif
 
 
 /****************************************

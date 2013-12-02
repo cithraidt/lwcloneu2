@@ -52,10 +52,8 @@
 	/* end */
 
 
-#define NR_OF_JOYSTICKS 2
 
-#if 0  // enable for using a mouse device
-#define MOUSE_DEVICE
+#if (USE_MOUSE)
 #define MOUSE_X_CLK_INDEX    9
 #define MOUSE_X_DIR_INDEX   10
 #define MOUSE_Y_CLK_INDEX   11

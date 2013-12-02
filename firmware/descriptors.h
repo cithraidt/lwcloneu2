@@ -44,22 +44,12 @@
   this software.
 */
 
-/** \file
- *
- *  Header file for Descriptors.c.
- */
-
 #ifndef _DESCRIPTORS_H_
 #define _DESCRIPTORS_H_
 
-/* Includes: */
 #include <avr/pgmspace.h>
 #include <LUFA/Drivers/USB/USB.h>
-
-
-#define USB_VENDOR_ID      0xFAFA
-#define USB_PRODUCT_ID     0x00F3        // this is used as the device identifier, 0x00F0 is '1' up to 0x00FF is '16'
-#define USB_VERSION_BCD    VERSION_BCD(01.00)
+#include <hwconfig.h>
 
 
 /* Type Defines: */
@@ -70,17 +60,26 @@
 typedef struct
 {
 	USB_Descriptor_Configuration_Header_t  Config;
-	USB_Descriptor_Interface_t             HID_Interface;
-	USB_HID_Descriptor_HID_t               HID_GenericHID;
-	USB_Descriptor_Endpoint_t              HID_ReportINEndpoint;
+	#if defined(ENABLE_LED_DEVICE)
+	USB_Descriptor_Interface_t             HID_LEDInterface;
+	USB_HID_Descriptor_HID_t               HID_LEDHID;
+	USB_Descriptor_Endpoint_t              HID_LEDReportINEndpoint;
+	#endif
+	#if defined(ENABLE_PANEL_DEVICE)
+	USB_Descriptor_Interface_t             HID_PanelInterface;
+	USB_HID_Descriptor_HID_t               HID_PanelHID;
+	USB_Descriptor_Endpoint_t              HID_PanelReportINEndpoint;
+	#endif
 } USB_Descriptor_Configuration_t;
 
 /* Macros: */
-/** Endpoint address of the Generic HID reporting IN endpoint. */
-#define GENERIC_IN_EPADDR         (ENDPOINT_DIR_IN  | 1)
+/** Endpoint address of the Panel HID reporting IN endpoint. */
+#define PANEL_EPADDR           (ENDPOINT_DIR_IN | 1)
+#define LED_EPADDR             (ENDPOINT_DIR_IN | 2)
 
-/** Size in bytes of the HID reporting IN endpoint. */
-#define GENERIC_EPSIZE           8
+/** Size in bytes of the Panel HID reporting IN endpoint. */
+#define PANEL_EPSIZE           8
+#define LED_EPSIZE             8
 
 /** Descriptor header type value, to indicate a HID class HID descriptor. */
 #define DTYPE_HID                 0x21
@@ -101,4 +100,3 @@ void SetProductID(uint16_t id);
 
 
 #endif
-
