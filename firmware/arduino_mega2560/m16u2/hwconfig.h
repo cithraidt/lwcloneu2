@@ -75,7 +75,6 @@ static void inline exit_bootloader_stk500v2(void)
 	SEND(0x1B ^ 3 ^ 0x0e ^ 0x11); // checksum
 
 	_delay_ms(60); // wait until the bootloader has replied and exited (50 ms minimum for shutting down the LEDs --> see stk500boot.c)
-	uint8_t x = UDR1; // clear data reg
 	UCSR1A &= ~(1 << U2X1); // restore previous state of the uart
 	UCSR1B &= ~(1 << TXEN1);
 

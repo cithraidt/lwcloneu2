@@ -75,11 +75,6 @@ int main(int argc, char* argv[])
 {
 	// parse arguments
 
-	if (argc <= 1) {
-		usage();
-		return 0;
-	}
-
 	const char * p_arg = NULL;
 	const char * id_arg = NULL;
 	int err = 0;
@@ -208,6 +203,10 @@ int main(int argc, char* argv[])
 
 			g_main.fn.LWZ_RAWWRITE(g_main.devlist.handles[index], buf, sizeof(buf));
 		}
+	}
+	else
+	{
+		usage();
 	}
 
 Failed:
