@@ -619,7 +619,7 @@ static void lwz_refreshlist_detached(lwz_context_t *h)
 				OPEN_EXISTING,
 				0,
 				NULL);
-							
+
 			if (hdev == INVALID_HANDLE_VALUE)
 			{
 				CloseHandle(h->devices[i].hdev);
@@ -779,10 +779,10 @@ static void lwz_freelist(lwz_context_t *h)
 typedef struct {
 	HANDLE hdev;
 	size_t ndata;
-	uint8_t data[256];
+	uint8_t data[32];
 } chunk_t;
 
-#define QUEUE_LENGTH 32
+#define QUEUE_LENGTH   512
 
 typedef struct {
 	chunk_t buf[QUEUE_LENGTH];
