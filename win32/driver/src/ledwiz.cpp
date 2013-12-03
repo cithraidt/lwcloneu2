@@ -42,6 +42,8 @@ typedef struct {
 	DWORD dat[256];
 } lwz_device_t;
 
+typedef void * HQUEUE;
+
 typedef struct
 {
 	lwz_device_t devices[LWZ_MAX_DEVICES];
@@ -49,6 +51,7 @@ typedef struct
 	HWND hwnd;
 	HANDLE hDevNotify;
 	WNDPROC WndProc;
+	HQUEUE hqueue;
 
 	struct {
 		void * puser;
@@ -85,6 +88,11 @@ static void lwz_refreshlist_detached(lwz_context_t *h);
 static void lwz_freelist(lwz_context_t *h);
 static void lwz_add(lwz_context_t *h, int indx);
 static void lwz_remove(lwz_context_t *h, int indx);
+
+static void queue_close(HQUEUE hqueue, bool unload);
+static HQUEUE queue_open(void);
+static size_t queue_push(HQUEUE hqueue, HANDLE hdev, uint8_t const *pdata, size_t ndata);
+static size_t queue_pop(HQUEUE hqueue, HANDLE *phdev, uint8_t *pbuffer, size_t nsize);
 
 
 struct CAutoLockCS  // helper class to lock a critical section, and unlock it automatically
@@ -130,6 +138,8 @@ void LWZ_SBA(
 	data[7] = 0;
 	data[8] = 0;
 
+	#if 0
+
 	DWORD nwritten = 0;
 
 	WaitForSingleObject(g_hmutex, INFINITE);
@@ -137,6 +147,13 @@ void LWZ_SBA(
 		WriteFile(hdev, data, 9, &nwritten, NULL);
 	}
 	ReleaseMutex(g_hmutex);
+
+	#else
+
+	queue_push(g_plwz->hqueue, hdev, &data[1], 8);
+
+	#endif
+
 }
 
 void LWZ_PBA(LWZHANDLE hlwz, BYTE const *pbrightness_32bytes)
@@ -152,6 +169,8 @@ void LWZ_PBA(LWZHANDLE hlwz, BYTE const *pbrightness_32bytes)
 
 	if (hdev == INVALID_HANDLE_VALUE)
 		return;
+
+	#if 0
 
 	BYTE data[1 + 32]; // one additional byte in front of the data for the report id
 	memcpy(&data[1], pbrightness_32bytes, 32);
@@ -169,6 +188,12 @@ void LWZ_PBA(LWZHANDLE hlwz, BYTE const *pbrightness_32bytes)
 		WriteFile(hdev, b, 9, &nwritten, NULL); b += 8; b[0] = 0;
 	}
 	ReleaseMutex(g_hmutex);
+
+	#else
+
+	queue_push(g_plwz->hqueue, hdev, pbrightness_32bytes, 32);
+
+	#endif
 }
 
 int LWZ_RAWWRITE(LWZHANDLE hlwz, BYTE const *pdata, DWORD ndata)
@@ -180,7 +205,7 @@ int LWZ_RAWWRITE(LWZHANDLE hlwz, BYTE const *pdata, DWORD ndata)
 	if (pdata == NULL)
 		return -1;
 
-	if (ndata >= 1024) // some reasonable limit
+	if (ndata >  32 || ndata == 0)
 		return -2;
 
 	HANDLE hdev = lwz_get_hdev(g_plwz, indx);
@@ -189,6 +214,8 @@ int LWZ_RAWWRITE(LWZHANDLE hlwz, BYTE const *pdata, DWORD ndata)
 		return -3;
 
 	int res = 0;
+
+	#if 0
 
 	WaitForSingleObject(g_hmutex, INFINITE);
 	{
@@ -215,6 +242,14 @@ int LWZ_RAWWRITE(LWZHANDLE hlwz, BYTE const *pdata, DWORD ndata)
 		}
 	}
 	ReleaseMutex(g_hmutex);
+
+	#else
+
+	size_t const nwritten = queue_push(g_plwz->hqueue, hdev, pdata, ndata);
+
+	res = (nwritten == ndata) ? 0 : 100 + (int)nwritten;
+
+	#endif
 
 	return res;
 }
@@ -378,6 +413,14 @@ static lwz_context_t * lwz_open(HINSTANCE hinstDLL)
 
 	memset(h, 0x00, sizeof(*h));
 
+	h->hqueue = queue_open();
+
+	if (h->hqueue == NULL)
+	{
+		free(h);
+		return NULL;
+	}
+
 	for (int i = 0; i < (sizeof(h->devices) / sizeof(h->devices[0])); i++)
 	{
 		h->devices[i].hdev = INVALID_HANDLE_VALUE;
@@ -396,6 +439,12 @@ static void lwz_close(lwz_context_t *h)
 
 	lwz_freelist(h);
 	lwz_register(h, 0, NULL);
+
+	if (h->hqueue != NULL)
+	{
+		queue_close(h->hqueue, true);
+		h->hqueue = NULL;
+	}
 
 	// free resources
 
@@ -724,3 +773,278 @@ static void lwz_freelist(lwz_context_t *h)
 	}
 }
 
+
+// simple fifo to move the WriteFile() calls to a seperate thread
+
+typedef struct {
+	HANDLE hdev;
+	size_t ndata;
+	uint8_t data[256];
+} chunk_t;
+
+#define QUEUE_LENGTH 32
+
+typedef struct {
+	chunk_t buf[QUEUE_LENGTH];
+	int rpos;
+	int wpos;
+	int level;
+	int state;
+	HANDLE hthread;
+	CRITICAL_SECTION cs;
+	HANDLE hrevent;
+	HANDLE hwevent;
+	HANDLE hfinishedevent;
+} queue_t;
+
+
+static DWORD WINAPI QueueThreadProc(LPVOID lpParameter)
+{
+	queue_t * const h = (queue_t*)lpParameter;
+
+	for (;;)
+	{
+		uint8_t buffer[64];
+		memset(&buffer[0], 0x00, sizeof(buffer));
+
+		// reserve the first byte for setting the report id later
+		HANDLE hdev = NULL;
+		size_t ndata = queue_pop(h, &hdev, &buffer[1], sizeof(buffer) - 1);
+
+		if (ndata == 0) {
+			break;
+		}
+
+		WaitForSingleObject(g_hmutex, INFINITE);
+		{
+			uint8_t * b = &buffer[0];
+
+			while (ndata > 0)
+			{
+				b[0] = 0; // report id
+
+				size_t const npayload = (ndata > 8) ? 8 : ndata;
+				DWORD nwritten = 0;
+
+				WriteFile(hdev, b, 1 + (DWORD)npayload, &nwritten, NULL);
+
+				b += npayload;
+				ndata -= npayload;
+			}
+		}
+		ReleaseMutex(g_hmutex);
+	}
+
+	SetEvent(h->hfinishedevent);
+
+	return 0;
+}
+
+static void queue_close(HQUEUE hqueue, bool unload)
+{
+	queue_t * const h = (queue_t*)hqueue;
+
+	if (h == NULL) {
+		return;
+	}
+
+	if (h->hthread)
+	{
+		queue_push(hqueue, NULL, NULL, 0);
+
+		if (unload)
+		{
+			// we can *not* wait for the thread itself
+			// if we are closed within the DLL unload.
+			// this would result in a deadlock
+			// instead we sync with the 'hfinishedevent' that is set at the end of the thread routine
+
+			WaitForSingleObject(h->hfinishedevent, INFINITE);
+			CloseHandle(h->hthread);
+			h->hthread = NULL;
+		}
+		else
+		{
+			WaitForSingleObject(h->hthread, INFINITE);
+			CloseHandle(h->hthread);
+			h->hthread = NULL;
+		}
+	}
+
+	if (h->hrevent)
+	{
+		CloseHandle(h->hrevent);
+		h->hrevent = NULL;
+	}
+
+	if (h->hwevent)
+	{
+		CloseHandle(h->hwevent);
+		h->hwevent = NULL;
+	}
+
+	if (h->hfinishedevent)
+	{
+		CloseHandle(h->hfinishedevent);
+		h->hfinishedevent = NULL;
+	}
+
+	DeleteCriticalSection(&h->cs);
+
+	free(h);
+}
+
+static HQUEUE queue_open(void)
+{
+	queue_t * const h = (queue_t*)malloc(sizeof(queue_t));
+
+	if (h == NULL) {
+		return NULL;
+	}
+
+	memset(h, 0x00, sizeof(queue_t));
+
+	InitializeCriticalSection(&h->cs);
+
+	h->hrevent = CreateEvent(NULL, FALSE, FALSE, NULL);
+	h->hwevent = CreateEvent(NULL, FALSE, FALSE, NULL);
+	h->hfinishedevent = CreateEvent(NULL, FALSE, FALSE, NULL);
+
+	if (h->hrevent == NULL ||
+		h->hwevent == NULL ||
+		h->hfinishedevent == NULL)
+	{
+		goto Failed;
+	}
+
+	h->hthread = CreateThread(NULL, 0, QueueThreadProc, (void*)h, 0, NULL);
+
+	if (h->hthread == NULL) {
+		goto Failed;
+	}
+
+	return h;
+
+Failed:
+	queue_close(h, false);
+	return NULL;
+}
+
+static size_t queue_push(HQUEUE hqueue, HANDLE hdev, uint8_t const *pdata, size_t ndata)
+{
+	queue_t * const h = (queue_t*)hqueue;
+
+	if (pdata == NULL || ndata == 0 || ndata > sizeof(h->buf[0].data)) 
+	{
+		// push empty chunk to signal shutdown
+
+		pdata = NULL;
+		ndata = 0;
+		hdev = NULL;
+	}
+
+	for (;;)
+	{
+		// check if there is some space to write into the queue
+
+		{
+			AUTOLOCK(h->cs);
+
+			if (h->state != 0) {
+				return 0;
+			}
+
+			int nfree = QUEUE_LENGTH - h->level;
+
+			if (nfree > 0)
+			{
+				chunk_t * const pc = &h->buf[h->wpos];
+
+				pc->hdev = hdev;
+				pc->ndata = ndata;
+
+				if (pdata != NULL) {
+					memcpy(&pc->data[0], pdata, ndata);
+				}
+
+				h->wpos += 1;
+
+				if (h->wpos >= QUEUE_LENGTH) {
+					h->wpos -= QUEUE_LENGTH;
+				}
+
+				// if the queue was empty, signal that there is now data available
+
+				if (h->level == 0) {
+					SetEvent(h->hwevent);
+				}
+
+				h->level += 1;
+
+				return ndata;
+			}
+		}
+
+		// if we are here, the queue is full and we have to wait until the consumer reads something
+
+		WaitForSingleObject(h->hrevent, INFINITE);
+	}
+}
+
+static size_t queue_pop(HQUEUE hqueue, HANDLE *phdev, uint8_t *pbuffer, size_t nsize)
+{
+	queue_t * const h = (queue_t*)hqueue;
+
+	if (phdev == NULL || pbuffer == NULL || nsize == 0 || nsize < sizeof(h->buf[0].data)) {
+		return 0;
+	}
+
+	for (;;)
+	{
+		// check if there is some data to read from the queue
+
+		{
+			AUTOLOCK(h->cs);
+
+			if (h->state != 0) {
+				return 0;
+			}
+
+			if (h->level > 0)
+			{
+				chunk_t * const pc = &h->buf[h->rpos];
+
+				*phdev = pc->hdev;
+
+				if (pc->ndata > 0) 
+				{
+					memcpy(pbuffer, &pc->data[0], pc->ndata);
+				}
+				else 
+				{
+					h->state = 1; 
+				}
+
+				h->rpos += 1;
+
+				if (h->rpos >= QUEUE_LENGTH) {
+					h->rpos -= QUEUE_LENGTH;
+				}
+
+				// if the queue was full, signal that there is now some free space
+
+				if (h->level == QUEUE_LENGTH) {
+					SetEvent(h->hrevent);
+				}
+
+				h->level -= 1;
+
+				return pc->ndata;
+			}
+		}
+
+		// if we are here, the queue is empty and we have to wait until the producer writes something
+
+		WaitForSingleObject(h->hwevent, INFINITE);
+	}
+}
