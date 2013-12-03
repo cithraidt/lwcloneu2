@@ -52,6 +52,11 @@
 #include <hwconfig.h>
 
 
+#define USB_VENDOR_ID      0xFAFA
+#define USB_PRODUCT_ID     0x00F3        // this is used as the device identifier, 0x00F0 is '1' up to 0x00FF is '16'
+#define USB_VERSION_BCD    VERSION_BCD(01.00)
+
+
 /* Type Defines: */
 /** Type define for the device configuration descriptor structure. This must be defined in the
  *  application code, as the configuration descriptor contains several sub-descriptors which
