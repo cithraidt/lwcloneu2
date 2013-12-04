@@ -28,7 +28,7 @@
 #error "invalid CPU type ==> should be ATMega2560"
 #endif
 
-#include "../usbconfig.h"
+#include "../devconfig.h"
 #include "pinmap.h"
 
 

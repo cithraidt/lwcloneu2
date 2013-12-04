@@ -14,8 +14,8 @@
  * if not, write to the Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
 
-#ifndef USBCONFIG_H__INCLUDED
-#define USBCONFIG_H__INCLUDED
+#ifndef DEVCONFIG_H__INCLUDED
+#define DEVCONFIG_H__INCLUDED
 
 
 /****************************************

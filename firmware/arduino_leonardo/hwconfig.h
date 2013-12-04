@@ -25,7 +25,7 @@
 #error "invalid CPU type ==> should be ATMega32u4"
 #endif
 
-#include "usbconfig.h"
+#include "devconfig.h"
 #include "pinmap.h"
 
 

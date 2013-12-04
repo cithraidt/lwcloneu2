@@ -25,7 +25,7 @@
 #error "invalid CPU type ==> should be atmega8u2/16u2/32u2"
 #endif
 
-#include "../usbconfig.h"
+#include "../devconfig.h"
 
 
 /****************************************

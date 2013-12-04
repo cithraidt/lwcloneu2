@@ -17,6 +17,9 @@
 #ifndef HWCONFIG_H__INCLUDED
 #define HWCONFIG_H__INCLUDED
 
+#include <stdint.h>
+#include <avr/io.h>
+
 #if (F_CPU != 16000000)
 #error "invalid CPU clock frequency ==> should be 16 MHZ"
 #endif
@@ -25,12 +28,15 @@
 #error "invalid CPU type ==> should be ATMega8/168/328"
 #endif
 
+#include "../devconfig.h"
+#include "pinmap.h"
+
 
 /****************************************
  LED driver config
 ****************************************/
 
-#include "pinmap.h"
+#if defined(ENABLE_LED_DEVICE)
 
 #define LED_TIMER_vect TIMER0_COMPA_vect
 
@@ -44,6 +50,7 @@ static void inline led_timer_init(void)
 	TCNT0 = 0x00;
 }
 
+#endif
 
 /****************************************
  Data UART config
@@ -60,7 +67,6 @@ static void inline data_uart_init(void)
 	UCSR0C |= (1 << UCSZ01) | (1 << UCSZ00) | (1 << UPM01) | (1 << UPM00); // asynchron uart, odd parity, 9-bit-character, 1 stop bit
 	UCSR0B |= (1 << UCSZ02) | (1 << TXEN0) | (1 << RXEN0) | (1 << RXCIE0); // enable Receiver and Transmitter
 }
-
 
 
 
