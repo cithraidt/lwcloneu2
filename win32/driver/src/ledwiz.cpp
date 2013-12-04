@@ -29,6 +29,10 @@ extern "C" {
 #include "../include/ledwiz.h"
 
 
+#define USE_SEPERATE_IO_THREAD
+// #define USE_OVERLAPPED_WRITEFILE
+
+
 const GUID HIDguid = { 0x4d1e55b2, 0xf16f, 0x11Cf, { 0x88, 0xcb, 0x00, 0x11, 0x11, 0x00, 0x00, 0x30 } };
 
 USHORT const VendorID_LEDWiz       = 0xFAFA;
@@ -39,6 +43,11 @@ static const char * lwz_process_sync_mutex_name = "lwz_process_sync_mutex";
 
 typedef struct {
 	HANDLE hdev;
+	LONG refcount;
+} devobj;
+
+typedef struct {
+	devobj* pdo;
 	DWORD dat[256];
 } lwz_device_t;
 
@@ -51,7 +60,10 @@ typedef struct
 	HWND hwnd;
 	HANDLE hDevNotify;
 	WNDPROC WndProc;
+
+	#if defined(USE_SEPERATE_IO_THREAD)
 	HQUEUE hqueue;
+	#endif
 
 	struct {
 		void * puser;
@@ -80,7 +92,7 @@ static lwz_context_t * lwz_open(HINSTANCE hinstDLL);
 static void lwz_close(lwz_context_t *h);
 
 static void lwz_register(lwz_context_t *h, int indx_user, HWND hwnd);
-static HANDLE lwz_get_hdev(lwz_context_t *h, int indx_user);
+static devobj * lwz_get_hdev(lwz_context_t *h, int indx_user);
 static void lwz_notify_callback(lwz_context_t *h, int reason, LWZHANDLE hlwz);
 
 static void lwz_refreshlist_attached(lwz_context_t *h);
@@ -89,10 +101,14 @@ static void lwz_freelist(lwz_context_t *h);
 static void lwz_add(lwz_context_t *h, int indx);
 static void lwz_remove(lwz_context_t *h, int indx);
 
+static devobj * devobj_create(HANDLE hdev);
+void devobj_addref(devobj *pdo);
+static void devobj_release(devobj *pdo);
+
 static void queue_close(HQUEUE hqueue, bool unload);
 static HQUEUE queue_open(void);
-static size_t queue_push(HQUEUE hqueue, HANDLE hdev, uint8_t const *pdata, size_t ndata);
-static size_t queue_pop(HQUEUE hqueue, HANDLE *phdev, uint8_t *pbuffer, size_t nsize);
+static size_t queue_push(HQUEUE hqueue, devobj *pdo, uint8_t const *pdata, size_t ndata);
+static size_t queue_pop(HQUEUE hqueue, devobj **ppdo, uint8_t *pbuffer, size_t nsize);
 
 
 struct CAutoLockCS  // helper class to lock a critical section, and unlock it automatically
@@ -121,10 +137,11 @@ void LWZ_SBA(
 
 	int indx = hlwz - 1;
 
-	HANDLE hdev = lwz_get_hdev(g_plwz, indx);
+	devobj * pdo = lwz_get_hdev(g_plwz, indx);
 
-	if (hdev == INVALID_HANDLE_VALUE)
+	if (pdo == NULL) {
 		return;
+	}
 
 	BYTE data[9];
 
@@ -138,7 +155,11 @@ void LWZ_SBA(
 	data[7] = 0;
 	data[8] = 0;
 
-	#if 0
+	#if defined(USE_SEPERATE_IO_THREAD)
+
+	queue_push(g_plwz->hqueue, pdo, &data[1], 8);
+
+	#else
 
 	DWORD nwritten = 0;
 
@@ -147,10 +168,6 @@ void LWZ_SBA(
 		WriteFile(hdev, data, 9, &nwritten, NULL);
 	}
 	ReleaseMutex(g_hmutex);
-
-	#else
-
-	queue_push(g_plwz->hqueue, hdev, &data[1], 8);
 
 	#endif
 
@@ -165,12 +182,17 @@ void LWZ_PBA(LWZHANDLE hlwz, BYTE const *pbrightness_32bytes)
 	if (pbrightness_32bytes == NULL)
 		return;
 
-	HANDLE hdev = lwz_get_hdev(g_plwz, indx);
+	devobj * pdo = lwz_get_hdev(g_plwz, indx);
 
-	if (hdev == INVALID_HANDLE_VALUE)
+	if (pdo == NULL) {
 		return;
+	}
 
-	#if 0
+	#if defined(USE_SEPERATE_IO_THREAD)
+
+	queue_push(g_plwz->hqueue, pdo, pbrightness_32bytes, 32);
+
+	#else
 
 	BYTE data[1 + 32]; // one additional byte in front of the data for the report id
 	memcpy(&data[1], pbrightness_32bytes, 32);
@@ -189,10 +211,6 @@ void LWZ_PBA(LWZHANDLE hlwz, BYTE const *pbrightness_32bytes)
 	}
 	ReleaseMutex(g_hmutex);
 
-	#else
-
-	queue_push(g_plwz->hqueue, hdev, pbrightness_32bytes, 32);
-
 	#endif
 }
 
@@ -208,14 +226,21 @@ int LWZ_RAWWRITE(LWZHANDLE hlwz, BYTE const *pdata, DWORD ndata)
 	if (ndata >  32 || ndata == 0)
 		return -2;
 
-	HANDLE hdev = lwz_get_hdev(g_plwz, indx);
+	devobj * pdo = lwz_get_hdev(g_plwz, indx);
 
-	if (hdev == INVALID_HANDLE_VALUE)
+	if (pdo == NULL) {
 		return -3;
+	}
 
 	int res = 0;
 
-	#if 0
+	#if defined(USE_SEPERATE_IO_THREAD)
+
+	size_t const nwritten = queue_push(g_plwz->hqueue, pdo, pdata, ndata);
+
+	res = (nwritten == ndata) ? 0 : 100 + (int)nwritten;
+
+	#else
 
 	WaitForSingleObject(g_hmutex, INFINITE);
 	{
@@ -242,12 +267,6 @@ int LWZ_RAWWRITE(LWZHANDLE hlwz, BYTE const *pdata, DWORD ndata)
 		}
 	}
 	ReleaseMutex(g_hmutex);
-
-	#else
-
-	size_t const nwritten = queue_push(g_plwz->hqueue, hdev, pdata, ndata);
-
-	res = (nwritten == ndata) ? 0 : 100 + (int)nwritten;
 
 	#endif
 
@@ -413,6 +432,7 @@ static lwz_context_t * lwz_open(HINSTANCE hinstDLL)
 
 	memset(h, 0x00, sizeof(*h));
 
+	#if defined(USE_SEPERATE_IO_THREAD)
 	h->hqueue = queue_open();
 
 	if (h->hqueue == NULL)
@@ -420,11 +440,7 @@ static lwz_context_t * lwz_open(HINSTANCE hinstDLL)
 		free(h);
 		return NULL;
 	}
-
-	for (int i = 0; i < (sizeof(h->devices) / sizeof(h->devices[0])); i++)
-	{
-		h->devices[i].hdev = INVALID_HANDLE_VALUE;
-	}
+	#endif
 
 	return h;
 }
@@ -440,11 +456,13 @@ static void lwz_close(lwz_context_t *h)
 	lwz_freelist(h);
 	lwz_register(h, 0, NULL);
 
+	#if defined(USE_SEPERATE_IO_THREAD)
 	if (h->hqueue != NULL)
 	{
 		queue_close(h->hqueue, true);
 		h->hqueue = NULL;
 	}
+	#endif
 
 	// free resources
 
@@ -501,8 +519,9 @@ static void lwz_register(lwz_context_t *h, int indx, HWND hwnd)
 			return;
 		}
 
-		if (h->devices[indx].hdev == INVALID_HANDLE_VALUE)
+		if (h->devices[indx].pdo == NULL) {
 			return;
+		}
 
 		// "subclass" the window
 
@@ -533,15 +552,15 @@ static void lwz_register(lwz_context_t *h, int indx, HWND hwnd)
 	}
 }
 
-static HANDLE lwz_get_hdev(lwz_context_t *h, int indx)
+static devobj * lwz_get_hdev(lwz_context_t *h, int indx)
 {
 	if (indx < 0 ||
 	    indx >= LWZ_MAX_DEVICES)
 	{
-		return INVALID_HANDLE_VALUE;
+		return NULL;
 	}
 
-	return h->devices[indx].hdev;
+	return h->devices[indx].pdo;
 }
 
 static void lwz_notify_callback(lwz_context_t *h, int reason, LWZHANDLE hlwz)
@@ -607,7 +626,7 @@ static void lwz_refreshlist_detached(lwz_context_t *h)
 
 	for (int i = 0; i < LWZ_MAX_DEVICES; i++)
 	{
-		if (h->devices[i].hdev != INVALID_HANDLE_VALUE)
+		if (h->devices[i].pdo != NULL)
 		{
 			SP_DEVICE_INTERFACE_DETAIL_DATA_A * pdiddat = (SP_DEVICE_INTERFACE_DETAIL_DATA_A *)&h->devices[i].dat[0];
 
@@ -620,10 +639,10 @@ static void lwz_refreshlist_detached(lwz_context_t *h)
 				0,
 				NULL);
 
-			if (hdev == INVALID_HANDLE_VALUE)
+			if (hdev == NULL)
 			{
-				CloseHandle(h->devices[i].hdev);
-				h->devices[i].hdev = INVALID_HANDLE_VALUE;
+				devobj_release(h->devices[i].pdo);
+				h->devices[i].pdo = NULL;
 
 				lwz_remove(h, i);
 			}
@@ -688,22 +707,26 @@ static void lwz_refreshlist_attached(lwz_context_t *h)
 		if (bres == FALSE)
 			continue;
 
-		device_tmp.hdev = CreateFileA(
-			pdiddat->DevicePath,
-			GENERIC_READ | GENERIC_WRITE,
-			FILE_SHARE_READ | FILE_SHARE_WRITE,
-			NULL,
-			OPEN_EXISTING,
-			0,
-			NULL);
+		{
+			HANDLE hdev  = CreateFileA(
+				pdiddat->DevicePath,
+				GENERIC_READ | GENERIC_WRITE,
+				FILE_SHARE_READ | FILE_SHARE_WRITE,
+				NULL,
+				OPEN_EXISTING,
+				0,
+				NULL);
 
-		if (device_tmp.hdev != INVALID_HANDLE_VALUE)
+			device_tmp.pdo = devobj_create(hdev);
+		}
+
+		if (device_tmp.pdo != NULL)
 		{
 			HIDD_ATTRIBUTES attrib = {};
 			attrib.Size = sizeof(HIDD_ATTRIBUTES);
 
 			BOOLEAN bSuccess = HidD_GetAttributes(
-				device_tmp.hdev,
+				device_tmp.pdo->hdev,
 				&attrib);
 
 			// if this is the VID/PID we are interested in
@@ -717,11 +740,11 @@ static void lwz_refreshlist_attached(lwz_context_t *h)
 			{
 				// do not overwrite a valid existing entry
 
-				if (h->devices[indx].hdev == INVALID_HANDLE_VALUE)
+				if (h->devices[indx].pdo == NULL)
 				{
 					PHIDP_PREPARSED_DATA p_prepdata = NULL;
 
-					if (HidD_GetPreparsedData(device_tmp.hdev, &p_prepdata) == TRUE)
+					if (HidD_GetPreparsedData(device_tmp.pdo->hdev, &p_prepdata) == TRUE)
 					{
 						HIDP_CAPS caps = {};
 
@@ -735,7 +758,7 @@ static void lwz_refreshlist_attached(lwz_context_t *h)
 								caps.OutputReportByteLength == 9)
 							{
 								memcpy(&h->devices[indx], &device_tmp, sizeof(device_tmp));
-								device_tmp.hdev = INVALID_HANDLE_VALUE;
+								device_tmp.pdo = NULL;
 
 								lwz_add(h, indx);
 
@@ -748,9 +771,10 @@ static void lwz_refreshlist_attached(lwz_context_t *h)
 				}
 			}
 
-			if (device_tmp.hdev != INVALID_HANDLE_VALUE)
+			if (device_tmp.pdo != NULL)
 			{
-				CloseHandle(device_tmp.hdev);
+				devobj_release(device_tmp.pdo);
+				device_tmp.pdo = NULL;
 			}
 		}
 	}
@@ -765,10 +789,10 @@ static void lwz_freelist(lwz_context_t *h)
 {
 	for (int i = 0; i < LWZ_MAX_DEVICES; i++)
 	{
-		if (h->devices[i].hdev != INVALID_HANDLE_VALUE)
+		if (h->devices[i].pdo != NULL)
 		{
-			CloseHandle(h->devices[i].hdev);
-			h->devices[i].hdev = INVALID_HANDLE_VALUE;
+			devobj_release(h->devices[i].pdo);
+			h->devices[i].pdo = NULL;
 		}
 	}
 }
@@ -777,7 +801,7 @@ static void lwz_freelist(lwz_context_t *h)
 // simple fifo to move the WriteFile() calls to a seperate thread
 
 typedef struct {
-	HANDLE hdev;
+	devobj* pdo;
 	size_t ndata;
 	uint8_t data[32];
 } chunk_t;
@@ -785,7 +809,6 @@ typedef struct {
 #define QUEUE_LENGTH   512
 
 typedef struct {
-	chunk_t buf[QUEUE_LENGTH];
 	int rpos;
 	int wpos;
 	int level;
@@ -794,7 +817,10 @@ typedef struct {
 	CRITICAL_SECTION cs;
 	HANDLE hrevent;
 	HANDLE hwevent;
-	HANDLE hfinishedevent;
+	HANDLE hqevent;
+	bool rblocked;
+	bool wblocked;
+	chunk_t buf[QUEUE_LENGTH];
 } queue_t;
 
 
@@ -808,10 +834,13 @@ static DWORD WINAPI QueueThreadProc(LPVOID lpParameter)
 		memset(&buffer[0], 0x00, sizeof(buffer));
 
 		// reserve the first byte for setting the report id later
-		HANDLE hdev = NULL;
-		size_t ndata = queue_pop(h, &hdev, &buffer[1], sizeof(buffer) - 1);
 
-		if (ndata == 0) {
+		devobj * pdo = NULL;
+		size_t ndata = queue_pop(h, &pdo, &buffer[1], sizeof(buffer) - 1);
+
+		// exit thread if required
+
+		if (ndata == 0 || pdo == NULL) {
 			break;
 		}
 
@@ -826,16 +855,18 @@ static DWORD WINAPI QueueThreadProc(LPVOID lpParameter)
 				size_t const npayload = (ndata > 8) ? 8 : ndata;
 				DWORD nwritten = 0;
 
-				WriteFile(hdev, b, 1 + (DWORD)npayload, &nwritten, NULL);
+				WriteFile(pdo->hdev, b, 1 + (DWORD)npayload, &nwritten, NULL);
 
 				b += npayload;
 				ndata -= npayload;
 			}
 		}
 		ReleaseMutex(g_hmutex);
+
+		devobj_release(pdo);
 	}
 
-	SetEvent(h->hfinishedevent);
+	SetEvent(h->hqevent);
 
 	return 0;
 }
@@ -857,9 +888,9 @@ static void queue_close(HQUEUE hqueue, bool unload)
 			// we can *not* wait for the thread itself
 			// if we are closed within the DLL unload.
 			// this would result in a deadlock
-			// instead we sync with the 'hfinishedevent' that is set at the end of the thread routine
+			// instead we sync with the 'hqevent' that is set at the end of the thread routine
 
-			WaitForSingleObject(h->hfinishedevent, INFINITE);
+			WaitForSingleObject(h->hqevent, INFINITE);
 			CloseHandle(h->hthread);
 			h->hthread = NULL;
 		}
@@ -883,10 +914,10 @@ static void queue_close(HQUEUE hqueue, bool unload)
 		h->hwevent = NULL;
 	}
 
-	if (h->hfinishedevent)
+	if (h->hqevent)
 	{
-		CloseHandle(h->hfinishedevent);
-		h->hfinishedevent = NULL;
+		CloseHandle(h->hqevent);
+		h->hqevent = NULL;
 	}
 
 	DeleteCriticalSection(&h->cs);
@@ -908,11 +939,11 @@ static HQUEUE queue_open(void)
 
 	h->hrevent = CreateEvent(NULL, FALSE, FALSE, NULL);
 	h->hwevent = CreateEvent(NULL, FALSE, FALSE, NULL);
-	h->hfinishedevent = CreateEvent(NULL, FALSE, FALSE, NULL);
+	h->hqevent = CreateEvent(NULL, FALSE, FALSE, NULL);
 
 	if (h->hrevent == NULL ||
 		h->hwevent == NULL ||
-		h->hfinishedevent == NULL)
+		h->hqevent == NULL)
 	{
 		goto Failed;
 	}
@@ -930,7 +961,7 @@ Failed:
 	return NULL;
 }
 
-static size_t queue_push(HQUEUE hqueue, HANDLE hdev, uint8_t const *pdata, size_t ndata)
+static size_t queue_push(HQUEUE hqueue, devobj* pdo, uint8_t const *pdata, size_t ndata)
 {
 	queue_t * const h = (queue_t*)hqueue;
 
@@ -940,11 +971,14 @@ static size_t queue_push(HQUEUE hqueue, HANDLE hdev, uint8_t const *pdata, size_
 
 		pdata = NULL;
 		ndata = 0;
-		hdev = NULL;
+		pdo = NULL;
 	}
 
 	for (;;)
 	{
+		bool do_wait = false;
+		bool do_unblock = false;
+
 		// check if there is some space to write into the queue
 
 		{
@@ -954,13 +988,22 @@ static size_t queue_push(HQUEUE hqueue, HANDLE hdev, uint8_t const *pdata, size_
 				return 0;
 			}
 
-			int nfree = QUEUE_LENGTH - h->level;
+			int const nfree = QUEUE_LENGTH - h->level;
 
-			if (nfree > 0)
+			if (nfree <= 0)
+			{
+				h->wblocked = true;
+				do_wait = true;
+			}
+			else
 			{
 				chunk_t * const pc = &h->buf[h->wpos];
 
-				pc->hdev = hdev;
+				if (pdo != NULL) {
+					devobj_addref(pdo);
+				}
+
+				pc->pdo = pdo;
 				pc->ndata = ndata;
 
 				if (pdata != NULL) {
@@ -973,16 +1016,21 @@ static size_t queue_push(HQUEUE hqueue, HANDLE hdev, uint8_t const *pdata, size_
 					h->wpos -= QUEUE_LENGTH;
 				}
 
-				// if the queue was empty, signal that there is now data available
-
-				if (h->level == 0) {
-					SetEvent(h->hwevent);
-				}
-
 				h->level += 1;
 
-				return ndata;
+				h->wblocked = false;
+				do_unblock = h->rblocked;
 			}
+		}
+
+		// if the reader is blocked (because the queue was empty), signal that there is now some free space
+
+		if (do_unblock) {
+			SetEvent(h->hwevent);
+		}
+
+		if (!do_wait) {
+			return ndata;
 		}
 
 		// if we are here, the queue is full and we have to wait until the consumer reads something
@@ -991,16 +1039,20 @@ static size_t queue_push(HQUEUE hqueue, HANDLE hdev, uint8_t const *pdata, size_
 	}
 }
 
-static size_t queue_pop(HQUEUE hqueue, HANDLE *phdev, uint8_t *pbuffer, size_t nsize)
+static size_t queue_pop(HQUEUE hqueue, devobj **ppdo, uint8_t *pbuffer, size_t nsize)
 {
 	queue_t * const h = (queue_t*)hqueue;
 
-	if (phdev == NULL || pbuffer == NULL || nsize == 0 || nsize < sizeof(h->buf[0].data)) {
+	if (ppdo == NULL || pbuffer == NULL || nsize == 0 || nsize < sizeof(h->buf[0].data)) {
 		return 0;
 	}
 
 	for (;;)
 	{
+		bool do_wait = false;
+		bool do_unblock = false;
+		size_t nread = 0;
+
 		// check if there is some data to read from the queue
 
 		{
@@ -1010,11 +1062,17 @@ static size_t queue_pop(HQUEUE hqueue, HANDLE *phdev, uint8_t *pbuffer, size_t n
 				return 0;
 			}
 
-			if (h->level > 0)
+			if (h->level <= 0)
+			{
+				h->rblocked = true;
+				do_wait = true;
+			}
+			else
 			{
 				chunk_t * const pc = &h->buf[h->rpos];
 
-				*phdev = pc->hdev;
+				*ppdo = pc->pdo;
+				pc->pdo = NULL;
 
 				if (pc->ndata > 0) 
 				{
@@ -1025,26 +1083,71 @@ static size_t queue_pop(HQUEUE hqueue, HANDLE *phdev, uint8_t *pbuffer, size_t n
 					h->state = 1; 
 				}
 
+				nread = pc->ndata;
+
 				h->rpos += 1;
 
 				if (h->rpos >= QUEUE_LENGTH) {
 					h->rpos -= QUEUE_LENGTH;
 				}
 
-				// if the queue was full, signal that there is now some free space
-
-				if (h->level == QUEUE_LENGTH) {
-					SetEvent(h->hrevent);
-				}
-
 				h->level -= 1;
 
-				return pc->ndata;
+				h->rblocked = false;
+				do_unblock = h->wblocked;
 			}
+		}
+
+		// if the writer is blocked (because the queue was full), signal that there is now some free space
+
+		if (do_unblock) {
+			SetEvent(h->hrevent);
+		}
+
+		if (!do_wait) {
+			return nread;
 		}
 
 		// if we are here, the queue is empty and we have to wait until the producer writes something
 
 		WaitForSingleObject(h->hwevent, INFINITE);
 	}
+}
+
+
+static devobj * devobj_create(HANDLE hdev)
+{
+	if (hdev == INVALID_HANDLE_VALUE) {
+		return NULL;
+	}
+
+	devobj * const pdo = (devobj*)malloc(sizeof(devobj));
+
+	if (pdo == NULL)
+	{
+		CloseHandle(hdev);
+		return NULL;
+	}
+
+	memset(pdo, 0x00, sizeof(devobj));
+	pdo->hdev = hdev;
+	pdo->refcount = 1;
+
+	return pdo;
+}
+
+static void devobj_release(devobj *pdo)
+{
+	LONG refcount_new = InterlockedDecrement(&pdo->refcount);
+
+	if (refcount_new <= 0)
+	{
+		CloseHandle(pdo->hdev);
+		free(pdo);
+	}
+}
+
+static void devobj_addref(devobj *pdo)
+{
+	InterlockedIncrement(&pdo->refcount);
 }
