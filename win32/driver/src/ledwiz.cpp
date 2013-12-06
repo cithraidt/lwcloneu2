@@ -402,7 +402,7 @@ static LRESULT CALLBACK lwz_wndproc(
 	else 
 
 	// check if the window is going to be destroyed
-		
+
 	if (uMsg == WM_DESTROY)
 	{
 		lwz_freelist(h);
@@ -680,7 +680,7 @@ static void lwz_refreshlist_attached(lwz_context_t *h)
 		didat.cbSize = sizeof(SP_DEVICE_INTERFACE_DATA);
 
 		BOOL bres = FALSE;
-		
+
 		bres = SetupDiEnumDeviceInterfaces(
 			hDevInfo,
 			NULL,
@@ -704,21 +704,20 @@ static void lwz_refreshlist_attached(lwz_context_t *h)
 			NULL,
 			NULL);
 
-		if (bres == FALSE)
+		if (bres == FALSE) {
 			continue;
-
-		{
-			HANDLE hdev  = CreateFileA(
-				pdiddat->DevicePath,
-				GENERIC_READ | GENERIC_WRITE,
-				FILE_SHARE_READ | FILE_SHARE_WRITE,
-				NULL,
-				OPEN_EXISTING,
-				0,
-				NULL);
-
-			device_tmp.pdo = devobj_create(hdev);
 		}
+
+		HANDLE hdev_tmp  = CreateFileA(
+			pdiddat->DevicePath,
+			GENERIC_READ | GENERIC_WRITE,
+			FILE_SHARE_READ | FILE_SHARE_WRITE,
+			NULL,
+			OPEN_EXISTING,
+			0,
+			NULL);
+
+		device_tmp.pdo = devobj_create(hdev_tmp);
 
 		if (device_tmp.pdo != NULL)
 		{
@@ -806,7 +805,7 @@ typedef struct {
 	uint8_t data[32];
 } chunk_t;
 
-#define QUEUE_LENGTH   512
+#define QUEUE_LENGTH   64   // the maximum bandwidth of the device is around 2 kByte/s so a lenght of 64 corresponds to one second
 
 typedef struct {
 	int rpos;
@@ -881,7 +880,7 @@ static void queue_close(HQUEUE hqueue, bool unload)
 
 	if (h->hthread)
 	{
-		queue_push(hqueue, NULL, NULL, 0);
+		queue_push(h, NULL, NULL, 0);
 
 		if (unload)
 		{
@@ -1023,7 +1022,7 @@ static size_t queue_push(HQUEUE hqueue, devobj* pdo, uint8_t const *pdata, size_
 			}
 		}
 
-		// if the reader is blocked (because the queue was empty), signal that there is now some free space
+		// if the reader is blocked (because the queue was empty), signal that there is now data available
 
 		if (do_unblock) {
 			SetEvent(h->hwevent);
