@@ -18,6 +18,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <signal.h>
+#include <time.h>
 
 #include <ledwiz.h>
 #include <windows.h>
@@ -64,9 +65,10 @@ void usage()
 {
 	printf("\n");
 	printf("Usage:\n\n");
-	printf("lwcconfig [-p <new id>] [<current id>]\n");
+	printf("lwcconfig [-m] [-p <new id>] [<current id>]\n");
 	printf("    -h .................... help\n");
 	printf("    -p <new id> ........... program new id\n");
+	printf("    -m .................... measure I/O bandwidth\n");
 	printf("\n");
 }
 
@@ -77,6 +79,7 @@ int main(int argc, char* argv[])
 
 	const char * p_arg = NULL;
 	const char * id_arg = NULL;
+	bool do_measure_bandwidth = false;
 	int err = 0;
 
 	for (int i = 1; i < argc && err == 0; i++) 
@@ -84,6 +87,11 @@ int main(int argc, char* argv[])
 		if (argv[i][0] == '-') 
 		{
 			switch (argv[i][1]) {
+			case 'm':
+			{
+				do_measure_bandwidth = true;
+				break;
+			}
 			case 'h':
 			{
 				err = 1;
@@ -115,6 +123,8 @@ int main(int argc, char* argv[])
 		}
 	}
 
+	printf("\n");
+
 	if (err < 0)
 	{
 		printf("invalid argument(s), %d", err);
@@ -145,7 +155,6 @@ int main(int argc, char* argv[])
 
 	if (g_main.fn.LWZ_SBA == NULL ||
 		g_main.fn.LWZ_PBA == NULL ||
-		g_main.fn.LWZ_RAWWRITE == NULL ||
 		g_main.fn.LWZ_REGISTER == NULL ||
 		g_main.fn.LWZ_SET_NOTIFY == NULL)
 	{
@@ -163,10 +172,108 @@ int main(int argc, char* argv[])
 		goto Failed;
 	}
 
+	// verify options
+
+	if (!do_measure_bandwidth &&
+		p_arg == NULL)
+	{
+		usage();
+		goto Failed;
+	}
+
+	// measure bandwidth
+
+	if (do_measure_bandwidth)
+	{
+		printf("measuring bandwidth ...\n");
+
+		int const duration_ms_max = 500;
+		uint8_t x32bytes[32] = {0};
+		int nsend = 0;
+		int nsend_total = 0;
+		int nduration_ms = 0;
+		clock_t t0;
+
+		// step 1: send as much data as possible within some fixed time to fill the input buffer
+
+		t0 = clock();
+
+		for (;;)
+		{
+			g_main.fn.LWZ_PBA(g_main.devlist.handles[0], &x32bytes[0]);
+			nsend += 32;
+
+			clock_t t1 = clock();
+			nduration_ms = ((t1 - t0) * 1000) / CLOCKS_PER_SEC;
+
+			if (nduration_ms > duration_ms_max) {
+				break;
+			}
+		}
+
+		nsend_total += nsend;
+
+		// step 2: measure average throughput
+
+		nsend = 0;
+		nduration_ms = 0;
+		t0 = clock();
+
+		for (;;)
+		{
+			g_main.fn.LWZ_PBA(g_main.devlist.handles[0], &x32bytes[0]);
+			nsend += 32;
+
+			clock_t t1 = clock();
+			nduration_ms = ((t1 - t0) * 1000) / CLOCKS_PER_SEC;
+
+			if (nduration_ms > duration_ms_max) {
+				break;
+			}
+		}
+
+		nsend_total += nsend;
+		double bps_avg = (double)nsend * 1000.0 / (double)nduration_ms;
+
+		// step 3: measure burst blocksize
+
+		Sleep((int)((double)nsend_total / bps_avg * 1000.0) + 100); // wait some time until the buffer is again free
+
+		nsend = 0;
+		nduration_ms = 0;
+		t0 = clock();
+
+		for (;;)
+		{
+			g_main.fn.LWZ_PBA(g_main.devlist.handles[0], &x32bytes[0]);
+			nsend += 32;
+
+			clock_t t1 = clock();
+			nduration_ms = ((t1 - t0) * 1000) / CLOCKS_PER_SEC;
+
+			if (nduration_ms > duration_ms_max) {
+				break;
+			}
+		}
+
+		int nsend_burst = nsend - (int)((double)nduration_ms * bps_avg / 1000.0);
+
+		if (nsend_burst < 0) {
+		    nsend_burst = 0;
+		}
+
+		printf("average rate: %0.2f kByte/s, burst blocksize: %d Byte\n", bps_avg / 1024.0, nsend_burst);
+	}
+
 	// reprogram new id
 
 	if (p_arg && g_main.devlist.numdevices > 0)
 	{
+		if (g_main.fn.LWZ_RAWWRITE == NULL) {
+			printf("invalid or old version ledwiz.dll! please update");
+			goto Failed;
+		}
+
 		int const id_old = (id_arg != NULL) ? atoi(id_arg) : g_main.devlist.handles[0];
 		int const id_new = atoi(p_arg);
 
@@ -203,10 +310,6 @@ int main(int argc, char* argv[])
 
 			g_main.fn.LWZ_RAWWRITE(g_main.devlist.handles[index], buf, sizeof(buf));
 		}
-	}
-	else
-	{
-		usage();
 	}
 
 Failed:
