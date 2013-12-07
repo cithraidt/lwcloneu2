@@ -58,6 +58,9 @@ static void inline led_timer_init(void)
 
 #define DEBUG_TX_UART_vect   USART1_UDRE_vect
 
+static void inline debug_uart_setUDRIE(uint8_t x) { if (x) { UCSR1B |= (1 << UDRIE1); } else { UCSR1B &= ~(1 << UDRIE1); } }
+static void inline debug_uart_writeUDR(uint8_t x) { UDR1 = x; }
+
 static void inline debug_uart_init(void)
 {
 	UBRR1 = 16;  // 115200 bit/s @ 16MHz (==> 2.1% error)

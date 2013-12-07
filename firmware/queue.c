@@ -79,7 +79,7 @@ uint8_t* chunk_prepare(fifo_t *f)
 		return NULL;
 
 	uint8_t index = f->wpos & f->mask;
-	
+
 	return &f->buf[index];
 }
 

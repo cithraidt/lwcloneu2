@@ -51,10 +51,14 @@ FILE g_stdout_uart = FDEV_SETUP_STREAM(putchar_uart_txt, NULL, _FDEV_SETUP_WRITE
 
 static int putchar_uart_raw(char c, FILE *stream)
 {
-	if (0 == queue_push(g_dbgfifo, c)) {
-		debug_uart_setUDRIE(1);
+	for (;;)
+	{
+		if (0 == queue_push(g_dbgfifo, c)) {
+			break;
+		}
 	}
 
+	debug_uart_setUDRIE(1);
 	return 0;
 }
 

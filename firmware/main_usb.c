@@ -243,6 +243,9 @@ void EVENT_USB_Device_ControlRequest(void)
 		{
 			Endpoint_ClearSETUP();
 
+			DbgOut(DBGINFO, "HID_REQ_SetReport, bRequest: 0x%02X, wIndex: %d, wLength: %d, wValue: %d",
+				USB_ControlRequest.bRequest, USB_ControlRequest.wIndex, USB_ControlRequest.wLength, USB_ControlRequest.wValue);
+
 			uint8_t * const pdata = buffer_lock();
 
 			if (pdata != NULL)
@@ -250,7 +253,7 @@ void EVENT_USB_Device_ControlRequest(void)
 				// Read the report data from the control endpoint
 				Endpoint_Read_Control_Stream_LE(pdata, 8);
 
-				DbgOut(DBGINFO, "HID_REQ_SetReport: %02x%02x%02x%02x%02x%02x%02x%02x", 
+				DbgOut(DBGINFO, "HID_REQ_SetReport: %02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x", 
 					pdata[0], pdata[1], pdata[2], pdata[3], pdata[4], pdata[5], pdata[6], pdata[7]);
 
 				// if this is a special command to set the ledwiz ID, execute it
