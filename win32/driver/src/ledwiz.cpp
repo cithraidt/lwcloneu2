@@ -737,24 +737,35 @@ static void lwz_refreshlist_attached(lwz_context_t *h)
 			    attrib.VendorID == VendorID_LEDWiz &&
 			    indx >= 0 && indx < LWZ_MAX_DEVICES)
 			{
-				// do not overwrite a valid existing entry
+				PHIDP_PREPARSED_DATA p_prepdata = NULL;
 
-				if (h->devices[indx].pdo == NULL)
+				if (HidD_GetPreparsedData(device_tmp.pdo->hdev, &p_prepdata) == TRUE)
 				{
-					PHIDP_PREPARSED_DATA p_prepdata = NULL;
+					HIDP_CAPS caps = {};
 
-					if (HidD_GetPreparsedData(device_tmp.pdo->hdev, &p_prepdata) == TRUE)
+					if (HIDP_STATUS_SUCCESS == HidP_GetCaps(p_prepdata, &caps))
 					{
-						HIDP_CAPS caps = {};
+						// LED-wiz has an interface with a eight byte report 
+						// (report-id is zero and is not transmitted, but counts here
+						// for the total length)
 
-						if (HIDP_STATUS_SUCCESS == HidP_GetCaps(p_prepdata, &caps))
+						if (caps.NumberLinkCollectionNodes == 1 &&
+							caps.OutputReportByteLength == 9)
 						{
-							// LED-wiz has an interface with a eight byte report 
-							// (report-id is zero and is not transmitted, but counts here
-							// for the total length)
+							// if this index is already in use, check the UsagePage lower Byte 
+							// and try to register as an additional device
 
-							if (caps.NumberLinkCollectionNodes == 1 &&
-								caps.OutputReportByteLength == 9)
+							if (h->devices[indx].pdo != NULL)
+							{
+								USHORT UsagePage = caps.UsagePage;
+								int indx_new = UsagePage & 0xFF;
+
+								if (indx_new >= 0 && indx_new < LWZ_MAX_DEVICES) {
+									indx = indx_new;
+								}
+							}
+
+							if (h->devices[indx].pdo == NULL)
 							{
 								memcpy(&h->devices[indx], &device_tmp, sizeof(device_tmp));
 								device_tmp.pdo = NULL;
@@ -764,9 +775,9 @@ static void lwz_refreshlist_attached(lwz_context_t *h)
 								num_devices++;
 							}
 						}
-
-						HidD_FreePreparsedData(p_prepdata);
 					}
+
+					HidD_FreePreparsedData(p_prepdata);
 				}
 			}
 

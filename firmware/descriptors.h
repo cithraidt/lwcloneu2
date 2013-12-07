@@ -51,10 +51,15 @@
 #include <LUFA/Drivers/USB/USB.h>
 #include <hwconfig.h>
 
+#define VERSION_XYZ_TO_BCD(a,b,c) \
+	((uint16_t)(((a)/10) % 10) << 12) | \
+	((uint16_t)((a) % 10) << 8) | \
+	((uint16_t)((b) % 10) << 4) | \
+	((uint16_t)((c) % 10) << 0)
 
 #define USB_VENDOR_ID      0xFAFA
 #define USB_PRODUCT_ID     0x00F3        // this is used as the device identifier, 0x00F0 is '1' up to 0x00FF is '16'
-#define USB_VERSION_BCD    VERSION_BCD(01.00)
+#define USB_VERSION_BCD    VERSION_XYZ_TO_BCD(1,0,0)
 
 
 /* Type Defines: */
