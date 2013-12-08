@@ -341,20 +341,16 @@ void SetProductID(uint16_t id)
  *  and endpoints. The descriptor is read out by the USB host during the enumeration process when selecting
  *  a configuration so that the host may correctly communicate with the USB device.
  */
- 
-#if defined(ENABLE_LED_DEVICE) && defined(ENABLE_PANEL_DEVICE)
-	#define NUM_TOTAL_INTERFACES 2
-	#define IFACENUMBER_PANEL 0
-	#define IFACENUMBER_LED 1
-#elif defined(ENABLE_LED_DEVICE) 
-	#define NUM_TOTAL_INTERFACES 1
-	#define IFACENUMBER_LED 0
-#elif defined(ENABLE_PANEL_DEVICE)
-	#define NUM_TOTAL_INTERFACES 1
-	#define IFACENUMBER_PANEL 0
-#else
-	#error "invalid configuration, no led-device enabled and no panel-device enabled"
-#endif
+
+typedef enum {
+	#if defined(ENABLE_PANEL_DEVICE)
+	IFACENUMBER_PANEL,
+	#endif
+	#if defined(ENABLE_LED_DEVICE) 
+	IFACENUMBER_LED,
+	#endif
+	NUM_TOTAL_INTERFACES,
+} iface_numbers;
  
 static const USB_Descriptor_Configuration_t PROGMEM ConfigurationDescriptor =
 {
