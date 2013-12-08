@@ -34,9 +34,16 @@
 
 
 #define LWCCONFIG_CMD_SETID 65
+#define LWCCONFIG_CMD_DFU   66
 
-#define LWC_CONFIG_IDENTIFIER 0xA62817B2   // some magic number
+#define LWC_CONFIG_IDENTIFIER 0xA62817B2   // some magic number(s)
+#define RESETSTATE_BOOTLOADER 0x42B8217C
+//#define BOOTLOADER_ADDRESS 0x7000  // todo: check this on all platforms
+
 #define OFFSET_OF(_struct_, _member_) (((uint8_t*)&(((_struct_*)NULL)->_member_)) - (uint8_t*)NULL)
+
+
+uint32_t g_resetstate __attribute__ ((section (".noinit")));
 
 typedef struct {
 	uint32_t id; 
@@ -54,7 +61,7 @@ static void hardware_init(void);
 static void main_task(void);
 static uint8_t* buffer_lock(void);
 static void buffer_unlock(void);
-static void hardware_restart(void);
+static void hardware_restart(bool enter_bootloader);
 static void configure_device(void);
 
 
@@ -80,9 +87,22 @@ int main(void)
 
 static void hardware_init(void)
 {
+	uint8_t const mcusr = MCUSR; // save status register
+
 	// Disable watchdog if enabled by bootloader/fuses
 	MCUSR &= ~(1 << WDRF);
 	wdt_disable();
+
+	#if defined(BOOTLOADER_ADDRESS)
+	// if that was a reset due to watchdog timeout that we issued, call the bootloader
+	if ((mcusr & (1 << WDRF)) && 
+	    (g_resetstate == RESETSTATE_BOOTLOADER))
+	{
+		g_resetstate = 0;
+		void (*bootloader)(void) = (void*)(BOOTLOADER_ADDRESS);
+		bootloader();
+	}
+	#endif
 
 	// Disable clock division
 	clock_prescale_set(clock_div_1);
@@ -273,7 +293,7 @@ void EVENT_USB_Device_ControlRequest(void)
 							&g_eeprom_table.configdata[0] + OFFSET_OF(lwc_config_t, ledwiz_id),
 							id & 0x0F);
 
-						hardware_restart();
+						hardware_restart(false);
 					}
 				}
 
@@ -292,7 +312,7 @@ void EVENT_USB_Device_ControlRequest(void)
 }
 
 
-static void hardware_restart(void)
+static void hardware_restart(bool enter_bootloader)
 {
 	// detach from the bus
 	USB_Disable();
@@ -306,6 +326,9 @@ static void hardware_restart(void)
 
 	// force a reset via watchdog timeout
 	wdt_enable(WDTO_15MS);
+
+	// set persistant variable, so we know that we issued the reset
+	g_resetstate = enter_bootloader ? RESETSTATE_BOOTLOADER : 0;
 
 	for (;;) {;}
 }
