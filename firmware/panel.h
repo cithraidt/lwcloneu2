@@ -40,6 +40,7 @@ enum ReportIds
 	ID_Mouse
 };
 
+static const uint16_t DELTA_TIME_PANEL_REPORT_MS = 5;
 
 void panel_init(void);
 uint8_t panel_get_report(uint8_t **ppdata);

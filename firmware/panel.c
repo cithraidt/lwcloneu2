@@ -395,7 +395,7 @@ static void SetInputCount(uint8_t index, uint8_t condition)
 		// simple debounce
 		if (ndelay == 0 && condition)
 		{
-			ndelay = 100/5;
+			ndelay = (100 / (DELTA_TIME_PANEL_REPORT_MS + 1));
 			ncount += MULTIFIRE_COUNT;
 		}
 		else if (ndelay > 1)
@@ -413,9 +413,9 @@ static void SetInputCount(uint8_t index, uint8_t condition)
 		// state machine to generate multiple events
 		if (ncount > 0)
 		{
-			condition = (ncycle < 100/5) ? 1 : 0;
+			condition = (ncycle < (100 / (DELTA_TIME_PANEL_REPORT_MS + 1))) ? 1 : 0;
 
-			if (ncycle >= 600/5)
+			if (ncycle >= (600 / (DELTA_TIME_PANEL_REPORT_MS + 1)))
 			{
 				ncycle = 0;
 				ncount -= 1;
@@ -706,8 +706,6 @@ uint8_t panel_get_report(uint8_t **ppdata)
 
 	static uint16_t time_next_ms = 0;
 	uint16_t const time_curr_ms = clock_ms();
-
-	const uint16_t DELTA_TIME_PANEL_REPORT_MS = 5;
 
 	if (((int16_t)time_curr_ms - (int16_t)time_next_ms) < 0) {
 		return 0;
