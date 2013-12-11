@@ -174,6 +174,9 @@ static DWORD WINAPI MyThreadProc(LPVOID lpParameter)
 
 	SetConsoleCtrlHandler((PHANDLER_ROUTINE)ctrlhandler, TRUE);
 
+	printf("waiting for device attachment or removal.\n");
+	printf("press <ctrl-c> to exit\n");
+
 	// window message loop
 
 	MSG msg;
