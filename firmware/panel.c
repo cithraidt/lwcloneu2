@@ -32,9 +32,10 @@
 #include <hwconfig.h>
 #include "panel.h"
 #include "keydefs.h"
+#include "clock.h"
 
 
-#if !defined(PANEL_TIMER_vect)
+#if !defined(PANEL_TASK)
 	void panel_init(void) {}
 	uint8_t panel_get_report(uint8_t **ppdata) { return 0; }
 #else
@@ -237,8 +238,6 @@ void panel_init(void)
 		DDR##port &= ~(1 << pin);
 	PANEL_MAPPING_TABLE(MAP)
 	#undef MAP
-
-	panel_timer_init();
 }
 
 static void SetNeedUpdate(uint8_t index)
@@ -396,7 +395,7 @@ static void SetInputCount(uint8_t index, uint8_t condition)
 		// simple debounce
 		if (ndelay == 0 && condition)
 		{
-			ndelay = 100;
+			ndelay = 100/5;
 			ncount += MULTIFIRE_COUNT;
 		}
 		else if (ndelay > 1)
@@ -414,9 +413,9 @@ static void SetInputCount(uint8_t index, uint8_t condition)
 		// state machine to generate multiple events
 		if (ncount > 0)
 		{
-			condition = (ncycle < 100) ? 1 : 0;
+			condition = (ncycle < 100/5) ? 1 : 0;
 
-			if (ncycle >= 600)
+			if (ncycle >= 600/5)
 			{
 				ncycle = 0;
 				ncount -= 1;
@@ -699,18 +698,6 @@ static uint8_t BuildReport(uint8_t id)
 	return 0;
 }
 
-static uint16_t gettime_ms(void)
-{
-	uint16_t t0;
-
-	ATOMIC_BLOCK(ATOMIC_FORCEON)
-	{
-		t0 = global_time_ms;
-	}
-
-	return t0;
-}
-
 uint8_t panel_get_report(uint8_t **ppdata)
 {
 	if (ppdata == NULL) {
@@ -718,7 +705,7 @@ uint8_t panel_get_report(uint8_t **ppdata)
 	}
 
 	static uint16_t time_next_ms = 0;
-	uint16_t const time_curr_ms = gettime_ms();
+	uint16_t const time_curr_ms = clock_ms();
 
 	const uint16_t DELTA_TIME_PANEL_REPORT_MS = 5;
 
@@ -740,12 +727,6 @@ uint8_t panel_get_report(uint8_t **ppdata)
 	*ppdata = ReportBuffer;
 
 	return ndata;
-}
-
-
-ISR(PANEL_TIMER_vect)
-{
-	global_time_ms += 1;
 }
 
 

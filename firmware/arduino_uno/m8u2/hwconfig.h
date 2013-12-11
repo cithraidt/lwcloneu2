@@ -46,6 +46,22 @@ static void inline data_uart_init(void)
 
 
 /****************************************
+ Clock config
+****************************************/
+
+#define CLOCK_COMPARE_MATCH_vect TIMER1_COMPA_vect
+#define CLOCK_TCNT TCNT1
+#define CLOCK_OCR OCR1A
+
+static void inline clock_init(void)
+{
+	OCR1A = TCNT1 + (F_CPU / 1000);
+	TCCR1B = _BV(CS10); //  normal mode, no prescale
+	TIMSK1 = _BV(OCIE1A); // enable Output Compare 1 interrupt
+}
+
+
+/****************************************
  Bootloader shutdown config
 ****************************************/
 

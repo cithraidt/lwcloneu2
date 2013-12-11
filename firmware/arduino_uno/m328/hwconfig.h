@@ -52,6 +52,16 @@ static void inline led_timer_init(void)
 
 #endif
 
+
+/****************************************
+ Panel config
+****************************************/
+
+#if defined(ENABLE_PANEL_DEVICE)
+#define PANEL_TASK
+#endif
+
+
 /****************************************
  Data UART config
 ****************************************/
@@ -66,6 +76,22 @@ static void inline data_uart_init(void)
 	UBRR0 = 3; // 250 kBit/s @ 16 MHz CPU
 	UCSR0C |= (1 << UCSZ01) | (1 << UCSZ00) | (1 << UPM01) | (1 << UPM00); // asynchron uart, odd parity, 9-bit-character, 1 stop bit
 	UCSR0B |= (1 << UCSZ02) | (1 << TXEN0) | (1 << RXEN0) | (1 << RXCIE0); // enable Receiver and Transmitter
+}
+
+
+/****************************************
+ Clock config
+****************************************/
+
+#define CLOCK_COMPARE_MATCH_vect TIMER1_COMPA_vect
+#define CLOCK_TCNT TCNT1
+#define CLOCK_OCR OCR1A
+
+static void inline clock_init(void)
+{
+	OCR1A = TCNT1 + (F_CPU / 1000);
+	TCCR1B = _BV(CS10); //  normal mode, no prescale
+	TIMSK1 = _BV(OCIE1A); // enable Output Compare 1 interrupt
 }
 
 

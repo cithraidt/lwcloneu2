@@ -55,19 +55,24 @@ static void inline led_timer_init(void)
 ****************************************/
 
 #if defined(ENABLE_PANEL_DEVICE)
-
-#define PANEL_TIMER_vect TIMER1_COMPA_vect
-
-static void inline panel_timer_init(void)
-{
-	const int T1_CYCLE_US = 1000;
-	OCR1A = (((T1_CYCLE_US * (F_CPU / 1000L)) / (64 * 1000L)) - 1);
-	TCCR1B = _BV(WGM12) | _BV(CS11) |_BV(CS10); //  clear timer/counter on compare1 match, prescale 64
-	TIMSK1 = _BV(OCIE1A); // enable Output Compare 1 overflow interrupt
-	TCNT1 = 0x00;
-}
-
+#define PANEL_TASK
 #endif
+
+
+/****************************************
+ Clock config
+****************************************/
+
+#define CLOCK_COMPARE_MATCH_vect TIMER1_COMPA_vect
+#define CLOCK_TCNT TCNT1
+#define CLOCK_OCR OCR1A
+
+static void inline clock_init(void)
+{
+	OCR1A = TCNT1 + (F_CPU / 1000);
+	TCCR1B = _BV(CS10); //  normal mode, no prescale
+	TIMSK1 = _BV(OCIE1A); // enable Output Compare 1 interrupt
+}
 
 
 /****************************************

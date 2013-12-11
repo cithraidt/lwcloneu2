@@ -17,7 +17,9 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <avr/interrupt.h>
+#include <util/atomic.h>
 
+#include "clock.h"
 #include "comm.h"
 
 extern FILE g_stdout_uart;
@@ -76,6 +78,10 @@ static int putchar_uart_txt(char c, FILE *stream)
 
 ISR(DEBUG_TX_UART_vect)
 {
+	#if defined(ENABLE_PROFILING)
+	profile_start();
+	#endif
+
 	uint8_t x;
 
 	int8_t res = queue_pop(g_dbgfifo, &x);
@@ -86,6 +92,56 @@ ISR(DEBUG_TX_UART_vect)
 	}
 
 	debug_uart_writeUDR(x);
+}
+
+#endif
+
+
+#if defined(ENABLE_PROFILING)
+
+static volatile uint8_t s_profiling = 0;
+static volatile uint32_t s_t_start = 0;
+
+void profile_stop(void)
+{
+	if (!s_profiling) {
+		return;
+	}
+
+	uint32_t t_now = clock();
+	uint32_t duration;
+
+	ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
+	{
+		duration = t_now - s_t_start;
+		s_profiling = 0;
+	}
+
+	static uint32_t duration_total = 0;
+	static uint32_t t_start_total = 0;
+
+	if (t_start_total == 0)
+	{
+		t_start_total = t_now;
+		duration_total = 0;
+		return;
+	}
+
+	duration_total += duration;
+
+	if ((t_now - t_start_total) > (((uint32_t)1 << 20) * 100)) {
+		DbgOut(DBGPROFILE, "CPU usage: %d%%", (uint16_t)(duration_total >> 20));
+		t_start_total = t_now;
+		duration_total = 0;
+	}
+}
+
+void profile_start(void)
+{
+	if (!s_profiling) {
+		s_profiling = 1;
+		s_t_start = clock();
+	}
 }
 
 #endif
@@ -113,6 +169,10 @@ void msg_send(void)
 
 ISR(DATA_TX_UART_vect)
 {
+	#if defined(ENABLE_PROFILING)
+	profile_start();
+	#endif
+
 	static uint8_t nbytes = 0;
 	static uint8_t * pdata = NULL;
 
@@ -178,6 +238,10 @@ void msg_release(void)
 
 ISR(DATA_RX_UART_vect)
 {
+	#if defined(ENABLE_PROFILING)
+	profile_start();
+	#endif
+
 	static uint8_t nbytes = 0;
 	static uint8_t * pdata = NULL;
 

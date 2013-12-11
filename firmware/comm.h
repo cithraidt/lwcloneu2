@@ -43,7 +43,8 @@ void msg_release(void);
 
 typedef enum {
 	DBGERROR = 0,
-	DBGINFO = 1,
+	DBGPROFILE,
+	DBGINFO,
 } debuglevel;
 
 #if defined(DEBUG_TX_UART_vect)
@@ -55,6 +56,12 @@ typedef enum {
 } while (0)
 #else
 #define DbgOut(_level_, _msg_, ...)
+#endif
+
+
+#if defined(ENABLE_PROFILING)
+void profile_start(void);
+void profile_stop(void);
 #endif
 
 

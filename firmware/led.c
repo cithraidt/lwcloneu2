@@ -184,6 +184,10 @@ static void update_pwm(uint8_t *pwm, int8_t n, uint16_t t)
 
 ISR(LED_TIMER_vect)
 {
+	#if defined(ENABLE_PROFILING)
+	profile_start();
+	#endif
+
 	static int8_t counter = 0;
 	static uint16_t t = 0;
 	static uint8_t pwm[NUMBER_OF_LEDS];

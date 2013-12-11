@@ -29,6 +29,7 @@
 
 int main(void)
 {
+	clock_init();
 	comm_init();
 	led_init();
 	panel_init();
@@ -64,13 +65,15 @@ int main(void)
 			}
 
 			msg_release();
+
+			continue;
 		}
 
 		#endif
 
 		// process panel changes
 
-		#if defined(PANEL_TIMER_vect)
+		#if defined(PANEL_TASK)
 
 		uint8_t * pdata = NULL;
 		uint8_t const ndata = panel_get_report(&pdata);
@@ -89,8 +92,17 @@ int main(void)
 			{
 				DbgOut(DBGERROR, "main_led, tx buffer overflow");
 			}
+
+			continue;
 		}
 
+		#endif
+
+		// if we are here, there was no new message and no new panel report
+		// ==> enter idle mode
+
+		#if defined(ENABLE_PROFILER)
+		profile_stop();
 		#endif
 
 		sleep_mode();

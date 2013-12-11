@@ -110,6 +110,7 @@ static void hardware_init(void)
 	set_sleep_mode(SLEEP_MODE_IDLE);
 
 	// initialize LED driver and UART and panel
+	clock_init();
 	comm_init();
 	led_init();
 	panel_init();
@@ -183,7 +184,7 @@ static void main_task(void)
 		msg_release();
 	}
 
-	#elif defined(PANEL_TIMER_vect)
+	#elif defined(PANEL_TASK)
 
 	uint8_t * pdata;
 	uint8_t const ndata = panel_get_report(&pdata);
@@ -204,6 +205,12 @@ static void main_task(void)
 	#endif
 
 #endif
+
+	#if defined(ENABLE_PROFILER)
+	profile_stop();
+	#endif
+
+	sleep_mode();
 }
 
 
