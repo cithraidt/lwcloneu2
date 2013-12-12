@@ -38,7 +38,6 @@
 
 #define LWC_CONFIG_IDENTIFIER 0xA62817B2   // some magic number(s)
 #define RESETSTATE_BOOTLOADER 0x42B8217C
-//#define BOOTLOADER_ADDRESS 0x7000  // todo: check this on all platforms
 
 #define OFFSET_OF(_struct_, _member_) (((uint8_t*)&(((_struct_*)NULL)->_member_)) - (uint8_t*)NULL)
 
@@ -93,13 +92,13 @@ static void hardware_init(void)
 	MCUSR &= ~(1 << WDRF);
 	wdt_disable();
 
-	#if defined(BOOTLOADER_ADDRESS)
+	#if defined(BOOTLOADER_START_ADDR)
 	// if that was a reset due to watchdog timeout that we issued, call the bootloader
 	if ((mcusr & (1 << WDRF)) && 
 	    (g_resetstate == RESETSTATE_BOOTLOADER))
 	{
 		g_resetstate = 0;
-		void (*bootloader)(void) = (void*)(BOOTLOADER_ADDRESS);
+		void (*bootloader)(void) = (void*)(BOOTLOADER_START_ADDR);
 		bootloader();
 	}
 	#endif
@@ -206,7 +205,7 @@ static void main_task(void)
 
 #endif
 
-	#if defined(ENABLE_PROFILER)
+	#if defined(ENABLE_PROFILING)
 	profile_stop();
 	#endif
 

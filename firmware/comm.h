@@ -43,19 +43,25 @@ void msg_release(void);
 
 typedef enum {
 	DBGERROR = 0,
-	DBGPROFILE,
 	DBGINFO,
 } debuglevel;
 
 #if defined(DEBUG_TX_UART_vect)
+
 #define DbgOut(_level_, _msg_, ...) do { \
 	if ((_level_) > DEBUGLEVEL) break; \
 	printf_P(((_level_) == DBGERROR) ? PSTR("[Error] ") : PSTR("[Info] ")); \
 	printf_P(PSTR(_msg_), ##__VA_ARGS__); \
 	printf_P(PSTR("\n")); \
 } while (0)
+
+#define MsgOut(_msg_, ...) printf_P(PSTR(_msg_), ##__VA_ARGS__)
+
 #else
+
 #define DbgOut(_level_, _msg_, ...)
+#define MsgOut(_msg_, ...)
+
 #endif
 
 

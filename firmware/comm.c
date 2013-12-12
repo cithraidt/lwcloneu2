@@ -129,8 +129,8 @@ void profile_stop(void)
 
 	duration_total += duration;
 
-	if ((t_now - t_start_total) > (((uint32_t)1 << 20) * 100)) {
-		DbgOut(DBGPROFILE, "CPU usage: %d%%", (uint16_t)(duration_total >> 20));
+	if ((t_now - t_start_total) > (((uint32_t)1 << 18) * 100)) {
+		MsgOut("\rCPU usage: %d%%", (uint16_t)(duration_total >> 18));
 		t_start_total = t_now;
 		duration_total = 0;
 	}

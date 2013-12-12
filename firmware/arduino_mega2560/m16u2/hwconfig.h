@@ -25,6 +25,7 @@
 #error "invalid CPU type ==> should be atmega8u2/16u2/32u2"
 #endif
 
+#include <avr/io.h>
 #include "../devconfig.h"
 
 
@@ -96,6 +97,10 @@ static void inline exit_bootloader_stk500v2(void)
 
 	#undef SEND
 }
+
+
+#define BOOTLOADER_SIZE 4096
+#define BOOTLOADER_START_ADDR  (FLASHEND + 1 - BOOTLOADER_SIZE)
 
 
 

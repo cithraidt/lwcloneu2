@@ -25,6 +25,7 @@
 #error "invalid CPU type ==> should be ATMega32u2"
 #endif
 
+#include <avr/io.h>
 #include "devconfig.h"
 #include "pinmap.h"
 
@@ -99,6 +100,10 @@ static void inline debug_uart_init(void)
 }
 
 #endif
+
+
+#define BOOTLOADER_SIZE 4096
+#define BOOTLOADER_START_ADDR  (FLASHEND + 1 - BOOTLOADER_SIZE)
 
 
 
