@@ -100,7 +100,7 @@ static void inline exit_bootloader_stk500v2(void)
 
 
 #define BOOTLOADER_SIZE 4096
-#define BOOTLOADER_START_ADDR  (FLASHEND + 1 - BOOTLOADER_SIZE)
+#define BOOTLOADER_START_ADDR  ((uint8_t*)1 + FLASHEND - BOOTLOADER_SIZE)
 
 
 

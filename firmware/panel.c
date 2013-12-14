@@ -62,7 +62,6 @@ static uint8_t shift_key = 0;
 static uint8_t shift_key_cleanup = 0;
 static uint8_t need_key_update = 0;
 static uint8_t need_consumer_update = 0;
-static uint16_t global_time_ms = 0;
 
 #if (NUM_JOYSTICKS >= 1)
 static uint8_t need_joystick_update[NUM_JOYSTICKS];

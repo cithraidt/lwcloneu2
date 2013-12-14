@@ -21,7 +21,7 @@ Building the firmware
 =====================
 
 In order to build all this, you need a recent toolchain for AVR microcontroller, e.g. the 'AVR Toolchain 3.4.2-1573' from Atmel or the one that is bundled with the Atmel AVRStudio.
-Get the sources from the Git repository, then do a 'git submodule update' in order to get the required LUFA (USB framework) sources. Then a 'make' should build the firmwares for all supported platforms.
+Get the sources from the Git repository, then do a 'git submodule update --init' in order to get the required LUFA (USB framework) sources. Then a 'make' should build the firmwares for all supported platforms.
 
 
 Building the Windows DLL
