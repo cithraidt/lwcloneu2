@@ -31,7 +31,6 @@ extern "C" {
 
 
 #define USE_SEPERATE_IO_THREAD
-// #define USE_OVERLAPPED_WRITEFILE
 
 
 const GUID HIDguid = { 0x4d1e55b2, 0xf16f, 0x11Cf, { 0x88, 0xcb, 0x00, 0x11, 0x11, 0x00, 0x00, 0x30 } };
@@ -42,13 +41,15 @@ USHORT const ProductID_LEDWiz_max  = ProductID_LEDWiz_min + LWZ_MAX_DEVICES - 1;
 
 static const char * lwz_process_sync_mutex_name = "lwz_process_sync_mutex";
 
-typedef struct {
-	HANDLE hdev;
-	LONG refcount;
-} devobj;
+static void* usbdev_open(LPCSTR devicepath);
+static void usbdev_addref(void *hudev);
+static void usbdev_release(void *hudev);
+static DWORD usbdev_read(void *hudev, BYTE *pdata, DWORD ndata);
+static DWORD usbdev_write(void *hudev, BYTE const *pdata, DWORD ndata);
+static HANDLE usbdev_handle(void *hudev);
 
 typedef struct {
-	devobj* pdo;
+	void* hudev;
 	DWORD dat[256];
 } lwz_device_t;
 
@@ -74,10 +75,6 @@ typedef struct
 
 } lwz_context_t;
 
-
-// 'g_hmutex' gives us atomic access to the hardware in case the dll is used in different processes
-HANDLE g_hmutex;
-
 // 'g_cs' protects our state if there is more than on thread in the process using the API.
 // Do not synchronize with other threads from within the callback routine because than it can deadlock!
 // Calling the API within the callback from the same thread is fine because the critical section does not block for that.
@@ -93,7 +90,7 @@ static lwz_context_t * lwz_open(HINSTANCE hinstDLL);
 static void lwz_close(lwz_context_t *h);
 
 static void lwz_register(lwz_context_t *h, int indx_user, HWND hwnd);
-static devobj * lwz_get_hdev(lwz_context_t *h, int indx_user);
+static void * lwz_get_hdev(lwz_context_t *h, int indx_user);
 static void lwz_notify_callback(lwz_context_t *h, int reason, LWZHANDLE hlwz);
 
 static void lwz_refreshlist_attached(lwz_context_t *h);
@@ -102,14 +99,10 @@ static void lwz_freelist(lwz_context_t *h);
 static void lwz_add(lwz_context_t *h, int indx);
 static void lwz_remove(lwz_context_t *h, int indx);
 
-static devobj * devobj_create(HANDLE hdev);
-void devobj_addref(devobj *pdo);
-static void devobj_release(devobj *pdo);
-
 static void queue_close(HQUEUE hqueue, bool unload);
 static HQUEUE queue_open(void);
-static size_t queue_push(HQUEUE hqueue, devobj *pdo, uint8_t const *pdata, size_t ndata);
-static size_t queue_pop(HQUEUE hqueue, devobj **ppdo, uint8_t *pbuffer, size_t nsize);
+static size_t queue_push(HQUEUE hqueue, void *hudev, uint8_t const *pdata, size_t ndata);
+static size_t queue_pop(HQUEUE hqueue, void **phudev, uint8_t *pbuffer, size_t nsize);
 static void queue_wait_empty(HQUEUE hqueue);
 
 
@@ -139,37 +132,29 @@ void LWZ_SBA(
 
 	int indx = hlwz - 1;
 
-	devobj * pdo = lwz_get_hdev(g_plwz, indx);
+	void * hudev = lwz_get_hdev(g_plwz, indx);
 
-	if (pdo == NULL) {
+	if (hudev == NULL) {
 		return;
 	}
 
-	BYTE data[9];
-
-	data[0] = 0; // report id
-	data[1] = 0x40; // LWZ_SBA command identifier
-	data[2] = bank0;
-	data[3] = bank1;
-	data[4] = bank2;
-	data[5] = bank3;
-	data[6] = globalPulseSpeed;
+	BYTE data[8];
+	data[0] = 0x40; // LWZ_SBA command identifier
+	data[1] = bank0;
+	data[2] = bank1;
+	data[3] = bank2;
+	data[4] = bank3;
+	data[5] = globalPulseSpeed;
+	data[6] = 0;
 	data[7] = 0;
-	data[8] = 0;
 
 	#if defined(USE_SEPERATE_IO_THREAD)
 
-	queue_push(g_plwz->hqueue, pdo, &data[1], 8);
+	queue_push(g_plwz->hqueue, hudev, &data[0], 8);
 
 	#else
 
-	DWORD nwritten = 0;
-
-	WaitForSingleObject(g_hmutex, INFINITE);
-	{
-		WriteFile(hdev, data, 9, &nwritten, NULL);
-	}
-	ReleaseMutex(g_hmutex);
+	usbdev_write(hudev, &data[0], 8);
 
 	#endif
 
@@ -184,95 +169,55 @@ void LWZ_PBA(LWZHANDLE hlwz, BYTE const *pbrightness_32bytes)
 	if (pbrightness_32bytes == NULL)
 		return;
 
-	devobj * pdo = lwz_get_hdev(g_plwz, indx);
+	void * hudev = lwz_get_hdev(g_plwz, indx);
 
-	if (pdo == NULL) {
+	if (hudev == NULL) {
 		return;
 	}
 
 	#if defined(USE_SEPERATE_IO_THREAD)
 
-	queue_push(g_plwz->hqueue, pdo, pbrightness_32bytes, 32);
+	queue_push(g_plwz->hqueue, hudev, pbrightness_32bytes, 32);
 
 	#else
 
-	BYTE data[1 + 32]; // one additional byte in front of the data for the report id
-	memcpy(&data[1], pbrightness_32bytes, 32);
-
-	BYTE * b = &data[0];
-	DWORD nwritten = 0;
-
-	b[0] = 0; // report id
-
-	WaitForSingleObject(g_hmutex, INFINITE);
-	{
-		WriteFile(hdev, b, 9, &nwritten, NULL); b += 8; b[0] = 0;
-		WriteFile(hdev, b, 9, &nwritten, NULL); b += 8; b[0] = 0;
-		WriteFile(hdev, b, 9, &nwritten, NULL); b += 8; b[0] = 0;
-		WriteFile(hdev, b, 9, &nwritten, NULL); b += 8; b[0] = 0;
-	}
-	ReleaseMutex(g_hmutex);
+	usbdev_write(hudev, pbrightness_32bytes, 32);
 
 	#endif
 }
 
-int LWZ_RAWWRITE(LWZHANDLE hlwz, BYTE const *pdata, DWORD ndata)
+DWORD LWZ_RAWWRITE(LWZHANDLE hlwz, BYTE const *pdata, DWORD ndata)
 {
 	AUTOLOCK(g_cs);
 
 	int indx = hlwz - 1;
 
-	if (pdata == NULL)
-		return -1;
+	if (pdata == NULL || ndata == 0)
+		return 0;
 
-	if (ndata >  32 || ndata == 0)
-		return -2;
+	if (ndata > 32)
+	    ndata = 32;
 
-	devobj * pdo = lwz_get_hdev(g_plwz, indx);
+	void * hudev = lwz_get_hdev(g_plwz, indx);
 
-	if (pdo == NULL) {
-		return -3;
+	if (hudev == NULL) {
+		return 0;
 	}
 
 	int res = 0;
+	DWORD nbyteswritten = 0;
 
 	#if defined(USE_SEPERATE_IO_THREAD)
 
-	size_t const nwritten = queue_push(g_plwz->hqueue, pdo, pdata, ndata);
-
-	res = (nwritten == ndata) ? 0 : 100 + (int)nwritten;
+	nbyteswritten = queue_push(g_plwz->hqueue, hudev, pdata, ndata);
 
 	#else
 
-	WaitForSingleObject(g_hmutex, INFINITE);
-	{
-		BYTE buf[9]; 
-		buf[0] = 0; // report id
-
-		while (ndata > 0)
-		{
-			int const ncopy = (ndata > 8) ? 8 : ndata;
-
-			memset(&buf[1], 0x00, 8);
-			memcpy(&buf[1], pdata, ncopy);
-			pdata += ncopy;
-			ndata -= ncopy;
-
-			DWORD nwritten = 0;
-			DWORD const nwrite = 9;
-			WriteFile(hdev, buf, nwrite, &nwritten, NULL);
-
-			if (nwritten != nwrite) {
-				res = 100 + nwritten;
-				break;
-			}
-		}
-	}
-	ReleaseMutex(g_hmutex);
+	usbdev_write(hudev, pdata, ndata);
 
 	#endif
 
-	return res;
+	return nbyteswritten;
 }
 
 DWORD LWZ_RAWREAD(LWZHANDLE hlwz, BYTE *pdata, DWORD ndata)
@@ -287,9 +232,9 @@ DWORD LWZ_RAWREAD(LWZHANDLE hlwz, BYTE *pdata, DWORD ndata)
 	if (ndata > 64)
 	    ndata = 64;
 
-	devobj * pdo = lwz_get_hdev(g_plwz, indx);
+	void * hudev = lwz_get_hdev(g_plwz, indx);
 
-	if (pdo == NULL) {
+	if (hudev == NULL) {
 		return 0;
 	}
 
@@ -297,23 +242,7 @@ DWORD LWZ_RAWREAD(LWZHANDLE hlwz, BYTE *pdata, DWORD ndata)
 	queue_wait_empty(g_plwz->hqueue);
 	#endif
 
-	int res = 0;
-	BYTE buffer[65];
-	DWORD nread = 0;
-	BOOL bres = FALSE;
-
-	WaitForSingleObject(g_hmutex, INFINITE);
-	{
-		bres = ReadFile(pdo->hdev, buffer, sizeof(buffer), &nread, NULL);
-	}
-	ReleaseMutex(g_hmutex);
-
-	if (ndata > nread)
-	    ndata = nread;
-
-	memcpy(pdata, buffer, ndata);
-
-	return ndata;
+	return usbdev_read(hudev, pdata, ndata);
 }
 
 void LWZ_REGISTER(LWZHANDLE hlwz, void * hwin)
@@ -381,21 +310,12 @@ BOOL WINAPI DllMain(
 {
 	if (fdwReason == DLL_PROCESS_ATTACH)
 	{
-		g_hmutex = CreateMutexA(
-			NULL,
-			FALSE,
-			lwz_process_sync_mutex_name);
-
-		if (g_hmutex == NULL)
-			return FALSE;
-
 		InitializeCriticalSection(&g_cs);
 
 		g_plwz = lwz_open(hinstDLL);
 
 		if (g_plwz == NULL)
 		{
-			CloseHandle(g_hmutex);
 			DeleteCriticalSection(&g_cs);
 			return FALSE;
 		}
@@ -406,7 +326,6 @@ BOOL WINAPI DllMain(
 			AUTOLOCK(g_cs);
 
 			lwz_close(g_plwz);
-			CloseHandle(g_hmutex);
 		}
 
 		DeleteCriticalSection(&g_cs);
@@ -562,7 +481,7 @@ static void lwz_register(lwz_context_t *h, int indx, HWND hwnd)
 			return;
 		}
 
-		if (h->devices[indx].pdo == NULL) {
+		if (h->devices[indx].hudev == NULL) {
 			return;
 		}
 
@@ -595,7 +514,7 @@ static void lwz_register(lwz_context_t *h, int indx, HWND hwnd)
 	}
 }
 
-static devobj * lwz_get_hdev(lwz_context_t *h, int indx)
+static void * lwz_get_hdev(lwz_context_t *h, int indx)
 {
 	if (indx < 0 ||
 	    indx >= LWZ_MAX_DEVICES)
@@ -603,7 +522,7 @@ static devobj * lwz_get_hdev(lwz_context_t *h, int indx)
 		return NULL;
 	}
 
-	return h->devices[indx].pdo;
+	return h->devices[indx].hudev;
 }
 
 static void lwz_notify_callback(lwz_context_t *h, int reason, LWZHANDLE hlwz)
@@ -669,7 +588,7 @@ static void lwz_refreshlist_detached(lwz_context_t *h)
 
 	for (int i = 0; i < LWZ_MAX_DEVICES; i++)
 	{
-		if (h->devices[i].pdo != NULL)
+		if (h->devices[i].hudev != NULL)
 		{
 			SP_DEVICE_INTERFACE_DETAIL_DATA_A * pdiddat = (SP_DEVICE_INTERFACE_DETAIL_DATA_A *)&h->devices[i].dat[0];
 
@@ -682,10 +601,10 @@ static void lwz_refreshlist_detached(lwz_context_t *h)
 				0,
 				NULL);
 
-			if (hdev == NULL)
+			if (hdev == INVALID_HANDLE_VALUE)
 			{
-				devobj_release(h->devices[i].pdo);
-				h->devices[i].pdo = NULL;
+				usbdev_release(h->devices[i].hudev);
+				h->devices[i].hudev = NULL;
 
 				lwz_remove(h, i);
 			}
@@ -751,24 +670,15 @@ static void lwz_refreshlist_attached(lwz_context_t *h)
 			continue;
 		}
 
-		HANDLE hdev_tmp  = CreateFileA(
-			pdiddat->DevicePath,
-			GENERIC_READ | GENERIC_WRITE,
-			FILE_SHARE_READ | FILE_SHARE_WRITE,
-			NULL,
-			OPEN_EXISTING,
-			0,
-			NULL);
+		device_tmp.hudev = usbdev_open(pdiddat->DevicePath);
 
-		device_tmp.pdo = devobj_create(hdev_tmp);
-
-		if (device_tmp.pdo != NULL)
+		if (device_tmp.hudev != NULL)
 		{
 			HIDD_ATTRIBUTES attrib = {};
 			attrib.Size = sizeof(HIDD_ATTRIBUTES);
 
 			BOOLEAN bSuccess = HidD_GetAttributes(
-				device_tmp.pdo->hdev,
+				usbdev_handle(device_tmp.hudev),
 				&attrib);
 
 			// if this is the VID/PID we are interested in
@@ -782,7 +692,7 @@ static void lwz_refreshlist_attached(lwz_context_t *h)
 			{
 				PHIDP_PREPARSED_DATA p_prepdata = NULL;
 
-				if (HidD_GetPreparsedData(device_tmp.pdo->hdev, &p_prepdata) == TRUE)
+				if (HidD_GetPreparsedData(usbdev_handle(device_tmp.hudev), &p_prepdata) == TRUE)
 				{
 					HIDP_CAPS caps = {};
 
@@ -798,7 +708,7 @@ static void lwz_refreshlist_attached(lwz_context_t *h)
 							// if this index is already in use, check the UsagePage lower Byte 
 							// and try to register as an additional device
 
-							if (h->devices[indx].pdo != NULL)
+							if (h->devices[indx].hudev != NULL)
 							{
 								USHORT UsagePage = caps.UsagePage;
 								int indx_new = UsagePage & 0xFF;
@@ -808,10 +718,10 @@ static void lwz_refreshlist_attached(lwz_context_t *h)
 								}
 							}
 
-							if (h->devices[indx].pdo == NULL)
+							if (h->devices[indx].hudev == NULL)
 							{
 								memcpy(&h->devices[indx], &device_tmp, sizeof(device_tmp));
-								device_tmp.pdo = NULL;
+								device_tmp.hudev = NULL;
 
 								lwz_add(h, indx);
 
@@ -824,10 +734,10 @@ static void lwz_refreshlist_attached(lwz_context_t *h)
 				}
 			}
 
-			if (device_tmp.pdo != NULL)
+			if (device_tmp.hudev != NULL)
 			{
-				devobj_release(device_tmp.pdo);
-				device_tmp.pdo = NULL;
+				usbdev_release(device_tmp.hudev);
+				device_tmp.hudev = NULL;
 			}
 		}
 	}
@@ -842,10 +752,10 @@ static void lwz_freelist(lwz_context_t *h)
 {
 	for (int i = 0; i < LWZ_MAX_DEVICES; i++)
 	{
-		if (h->devices[i].pdo != NULL)
+		if (h->devices[i].hudev != NULL)
 		{
-			devobj_release(h->devices[i].pdo);
-			h->devices[i].pdo = NULL;
+			usbdev_release(h->devices[i].hudev);
+			h->devices[i].hudev = NULL;
 		}
 	}
 }
@@ -854,7 +764,7 @@ static void lwz_freelist(lwz_context_t *h)
 // simple fifo to move the WriteFile() calls to a seperate thread
 
 typedef struct {
-	devobj* pdo;
+	void* hudev;
 	size_t ndata;
 	uint8_t data[32];
 } chunk_t;
@@ -886,46 +796,18 @@ static DWORD WINAPI QueueThreadProc(LPVOID lpParameter)
 	for (;;)
 	{
 		uint8_t buffer[64];
-		memset(&buffer[0], 0x00, sizeof(buffer));
 
-		// reserve the first byte for setting the report id later
-
-		devobj * pdo = NULL;
-		size_t ndata = queue_pop(h, &pdo, &buffer[1], sizeof(buffer) - 1);
+		void * hudev = NULL;
+		size_t ndata = queue_pop(h, &hudev, &buffer[0], sizeof(buffer));
 
 		// exit thread if required
 
-		if (ndata == 0 || pdo == NULL) {
+		if (ndata == 0 || hudev == NULL) {
 			break;
 		}
 
-		WaitForSingleObject(g_hmutex, INFINITE);
-		{
-			uint8_t * b = &buffer[0];
-
-			while (ndata > 0)
-			{
-				b[0] = 0; // report id
-
-				size_t const npayload = (ndata > 8) ? 8 : ndata;
-				DWORD nwritten = 0;
-				DWORD nwrite = 1 + (DWORD)npayload;
-
-				BOOL bresult = WriteFile(pdo->hdev, b, nwrite, &nwritten, NULL);
-
-				if (bresult != TRUE || nwritten != nwrite)
-				{
-					DWORD dwerror = GetLastError();
-					_ASSERT(0);
-				}
-
-				b += npayload;
-				ndata -= npayload;
-			}
-		}
-		ReleaseMutex(g_hmutex);
-
-		devobj_release(pdo);
+		usbdev_write(hudev, &buffer[0], ndata);
+		usbdev_release(hudev);
 	}
 
 	SetEvent(h->hqevent);
@@ -1038,7 +920,7 @@ static void queue_wait_empty(HQUEUE hqueue)
 				return;
 			}
 
-			if (h->level == 0)
+			if (h->level == 0 && h->rblocked)
 			{
 				h->eblocked = false;
 				return;
@@ -1051,7 +933,7 @@ static void queue_wait_empty(HQUEUE hqueue)
 	}
 }
 
-static size_t queue_push(HQUEUE hqueue, devobj* pdo, uint8_t const *pdata, size_t ndata)
+static size_t queue_push(HQUEUE hqueue, void* hudev, uint8_t const *pdata, size_t ndata)
 {
 	queue_t * const h = (queue_t*)hqueue;
 
@@ -1061,7 +943,7 @@ static size_t queue_push(HQUEUE hqueue, devobj* pdo, uint8_t const *pdata, size_
 
 		pdata = NULL;
 		ndata = 0;
-		pdo = NULL;
+		hudev = NULL;
 	}
 
 	for (;;)
@@ -1089,11 +971,11 @@ static size_t queue_push(HQUEUE hqueue, devobj* pdo, uint8_t const *pdata, size_
 			{
 				chunk_t * const pc = &h->buf[h->wpos];
 
-				if (pdo != NULL) {
-					devobj_addref(pdo);
+				if (hudev != NULL) {
+					usbdev_addref(hudev);
 				}
 
-				pc->pdo = pdo;
+				pc->hudev = hudev;
 				pc->ndata = ndata;
 
 				if (pdata != NULL) {
@@ -1129,11 +1011,11 @@ static size_t queue_push(HQUEUE hqueue, devobj* pdo, uint8_t const *pdata, size_
 	}
 }
 
-static size_t queue_pop(HQUEUE hqueue, devobj **ppdo, uint8_t *pbuffer, size_t nsize)
+static size_t queue_pop(HQUEUE hqueue, void **phudev, uint8_t *pbuffer, size_t nsize)
 {
 	queue_t * const h = (queue_t*)hqueue;
 
-	if (ppdo == NULL || pbuffer == NULL || nsize == 0 || nsize < sizeof(h->buf[0].data)) {
+	if (phudev == NULL || pbuffer == NULL || nsize == 0 || nsize < sizeof(h->buf[0].data)) {
 		return 0;
 	}
 
@@ -1156,13 +1038,17 @@ static size_t queue_pop(HQUEUE hqueue, devobj **ppdo, uint8_t *pbuffer, size_t n
 			{
 				h->rblocked = true;
 				do_wait = true;
+
+				if (h->eblocked) {
+					SetEvent(h->heevent);
+				}
 			}
 			else
 			{
 				chunk_t * const pc = &h->buf[h->rpos];
 
-				*ppdo = pc->pdo;
-				pc->pdo = NULL;
+				*phudev = pc->hudev;
+				pc->hudev = NULL;
 
 				if (pc->ndata > 0) 
 				{
@@ -1183,9 +1069,6 @@ static size_t queue_pop(HQUEUE hqueue, devobj **ppdo, uint8_t *pbuffer, size_t n
 
 				h->level -= 1;
 
-				if (h->level == 0 && h->eblocked) {
-					SetEvent(h->heevent);
-				}
 
 				h->rblocked = false;
 				do_unblock = h->wblocked;
@@ -1209,39 +1092,273 @@ static size_t queue_pop(HQUEUE hqueue, devobj **ppdo, uint8_t *pbuffer, size_t n
 }
 
 
-static devobj * devobj_create(HANDLE hdev)
+static void usbdev_close_internal(void *hudev);
+
+#define USB_READ_TIMOUT_MS 500
+
+typedef struct {
+	CRITICAL_SECTION cslock;
+	HANDLE hrevent;
+	HANDLE hwevent;
+	HANDLE hdev;
+	LONG refcount;
+} usbdev_context_t;
+
+
+static void* usbdev_open(LPCSTR devicepath)
 {
-	if (hdev == INVALID_HANDLE_VALUE) {
+	// create context
+
+	usbdev_context_t * const h = (usbdev_context_t*)malloc(sizeof(usbdev_context_t));
+
+	if (h == NULL)
 		return NULL;
+
+	memset(h, 0x00, sizeof(*h));
+	h->hdev = INVALID_HANDLE_VALUE;
+
+	InitializeCriticalSection(&h->cslock);
+
+	h->hrevent = CreateEvent(NULL, TRUE, FALSE, NULL);
+	h->hwevent = CreateEvent(NULL, TRUE, FALSE, NULL);
+
+	if (h->hrevent == NULL ||
+		h->hwevent == NULL)
+	{
+		goto Failed;
 	}
 
-	devobj * const pdo = (devobj*)malloc(sizeof(devobj));
+	// open device
 
-	if (pdo == NULL)
+	HANDLE hdev  = CreateFileA(
+		devicepath,
+		GENERIC_READ | GENERIC_WRITE,
+		FILE_SHARE_READ | FILE_SHARE_WRITE,
+		NULL,
+		OPEN_EXISTING,
+		FILE_FLAG_OVERLAPPED,
+		NULL);
+
+	if (hdev != INVALID_HANDLE_VALUE)
 	{
-		CloseHandle(hdev);
+		h->hdev = hdev;
+		h->refcount = 1;
+		return h;
+	}
+
+Failed:
+	usbdev_close_internal(h);
+	return NULL;
+}
+
+static void usbdev_close_internal(void *hudev)
+{
+	usbdev_context_t * const h = (usbdev_context_t*)hudev;
+
+	if (h == NULL)
+		return;
+
+	if (h->hrevent)
+	{
+		CloseHandle(h->hrevent);
+		h->hrevent = NULL;
+	}
+
+	if (h->hwevent)
+	{
+		CloseHandle(h->hwevent);
+		h->hwevent = NULL;
+	}
+
+	if (h->hdev != INVALID_HANDLE_VALUE)
+	{
+		CloseHandle(h->hdev);
+		h->hdev = INVALID_HANDLE_VALUE;
+	}
+
+	DeleteCriticalSection(&h->cslock);
+
+	free(h);
+}
+
+static void usbdev_release(void *hudev)
+{
+	usbdev_context_t * const h = (usbdev_context_t*)hudev;
+
+	if (h != NULL)
+	{
+		LONG refcount_new = InterlockedDecrement(&h->refcount);
+
+		if (refcount_new <= 0)
+		{
+			usbdev_close_internal(h);
+		}
+	}
+}
+
+static void usbdev_addref(void *hudev)
+{
+	usbdev_context_t * const h = (usbdev_context_t*)hudev;
+
+	if (h != NULL)
+	{
+		InterlockedIncrement(&h->refcount);
+	}
+}
+
+static HANDLE usbdev_handle(void *hudev)
+{
+	usbdev_context_t * const h = (usbdev_context_t*)hudev;
+	
+	if (h == NULL)
+		return INVALID_HANDLE_VALUE;
+
+	return h->hdev;
+}
+
+static DWORD usbdev_read(void * hudev, BYTE *pdata, DWORD ndata)
+{
+	usbdev_context_t * const h = (usbdev_context_t*)hudev;
+
+	if (h == NULL)
 		return NULL;
-	}
 
-	memset(pdo, 0x00, sizeof(devobj));
-	pdo->hdev = hdev;
-	pdo->refcount = 1;
+	if (pdata == NULL)
+		return 0;
 
-	return pdo;
-}
+	if (ndata > 64)
+	    ndata = 64;
 
-static void devobj_release(devobj *pdo)
-{
-	LONG refcount_new = InterlockedDecrement(&pdo->refcount);
+	AUTOLOCK(h->cslock);
 
-	if (refcount_new <= 0)
+	int res = 0;
+	BYTE buffer[65];
+	DWORD nread = 0;
+	BOOL bres = FALSE;
+
+	OVERLAPPED ol = {};
+	ol.hEvent = h->hrevent;
+
+	bres = ReadFile(h->hdev, buffer, sizeof(buffer), NULL, &ol);
+
+	if (bres != TRUE)
 	{
-		CloseHandle(pdo->hdev);
-		free(pdo);
+		DWORD dwerror = GetLastError();
+
+		if (dwerror == ERROR_IO_PENDING)
+		{
+			if (WaitForSingleObject(h->hrevent, USB_READ_TIMOUT_MS) != WAIT_OBJECT_0)
+			{
+				CancelIo(h->hdev);
+			}
+
+			bres = TRUE;
+		}
 	}
+
+	if (bres == TRUE)
+	{
+		bres = GetOverlappedResult(
+			h->hdev,
+			&ol,
+			&nread,
+			TRUE);
+	}
+
+	if (bres != TRUE)
+	{
+		DWORD dwerror = GetLastError();
+		_ASSERT(0);
+	}
+
+	if (nread <= 1 || bres != TRUE)
+		return 0;
+
+	nread -= 1; // skip report id
+
+	if (ndata > nread)
+	    ndata = nread;
+
+	memcpy(pdata, &buffer[1], ndata);
+
+	return ndata;
 }
 
-static void devobj_addref(devobj *pdo)
+static DWORD usbdev_write(void * hudev, BYTE const *pdata, DWORD ndata)
 {
-	InterlockedIncrement(&pdo->refcount);
+	usbdev_context_t * const h = (usbdev_context_t*)hudev;
+	
+	if (h == NULL)
+		return NULL;
+
+	if (pdata == NULL || ndata == 0)
+		return 0;
+
+	if (ndata > 32)
+	    ndata = 32;
+
+	AUTOLOCK(h->cslock);
+
+	int res = 0;
+	DWORD nbyteswritten = 0;
+
+	BYTE buf[9]; 
+	buf[0] = 0; // report id
+
+	while (ndata > 0)
+	{
+		int const ncopy = (ndata > 8) ? 8 : ndata;
+
+		memset(&buf[1], 0x00, 8);
+		memcpy(&buf[1], pdata, ncopy);
+		pdata += ncopy;
+		ndata -= ncopy;
+
+		DWORD nwritten = 0;
+		DWORD const nwrite = 9;
+
+		OVERLAPPED ol = {};
+		ol.hEvent = h->hwevent;
+
+		BOOL bres = WriteFile(h->hdev, buf, nwrite, NULL, &ol);
+
+		if (bres != TRUE)
+		{
+			DWORD dwerror = GetLastError();
+
+			if (dwerror == ERROR_IO_PENDING)
+			{
+				if (WaitForSingleObject(h->hwevent, USB_READ_TIMOUT_MS) != WAIT_OBJECT_0)
+				{
+					CancelIo(h->hdev);
+				}
+
+				bres = TRUE;
+			}
+		}
+
+		if (bres == TRUE)
+		{
+			bres = GetOverlappedResult(
+				h->hdev,
+				&ol,
+				&nwritten,
+				TRUE);
+		}
+
+		if (bres != TRUE)
+		{
+			DWORD dwerror = GetLastError();
+			_ASSERT(0);
+		}
+
+		if (nwritten != nwrite || bres != TRUE) {
+			break;
+		}
+
+		nbyteswritten += ncopy;
+	}
+
+	return nbyteswritten;
 }
+
