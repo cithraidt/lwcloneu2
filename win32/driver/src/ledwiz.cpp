@@ -28,7 +28,7 @@ extern "C" {
 
 #define LWZ_DLL_EXPORT
 #include "../include/ledwiz.h"
-
+#include "usbdev.h"
 
 #define USE_SEPERATE_IO_THREAD
 
@@ -41,15 +41,8 @@ USHORT const ProductID_LEDWiz_max  = ProductID_LEDWiz_min + LWZ_MAX_DEVICES - 1;
 
 static const char * lwz_process_sync_mutex_name = "lwz_process_sync_mutex";
 
-static void* usbdev_open(LPCSTR devicepath);
-static void usbdev_addref(void *hudev);
-static void usbdev_release(void *hudev);
-static DWORD usbdev_read(void *hudev, BYTE *pdata, DWORD ndata);
-static DWORD usbdev_write(void *hudev, BYTE const *pdata, DWORD ndata);
-static HANDLE usbdev_handle(void *hudev);
-
 typedef struct {
-	void* hudev;
+	HUDEV hudev;
 	DWORD dat[256];
 } lwz_device_t;
 
@@ -90,7 +83,7 @@ static lwz_context_t * lwz_open(HINSTANCE hinstDLL);
 static void lwz_close(lwz_context_t *h);
 
 static void lwz_register(lwz_context_t *h, int indx_user, HWND hwnd);
-static void * lwz_get_hdev(lwz_context_t *h, int indx_user);
+static HUDEV lwz_get_hdev(lwz_context_t *h, int indx_user);
 static void lwz_notify_callback(lwz_context_t *h, int reason, LWZHANDLE hlwz);
 
 static void lwz_refreshlist_attached(lwz_context_t *h);
@@ -101,8 +94,8 @@ static void lwz_remove(lwz_context_t *h, int indx);
 
 static void queue_close(HQUEUE hqueue, bool unload);
 static HQUEUE queue_open(void);
-static size_t queue_push(HQUEUE hqueue, void *hudev, uint8_t const *pdata, size_t ndata);
-static size_t queue_pop(HQUEUE hqueue, void **phudev, uint8_t *pbuffer, size_t nsize);
+static size_t queue_push(HQUEUE hqueue, HUDEV hudev, uint8_t const *pdata, size_t ndata);
+static size_t queue_pop(HQUEUE hqueue, HUDEV *phudev, uint8_t *pbuffer, size_t nsize);
 static void queue_wait_empty(HQUEUE hqueue);
 
 
@@ -132,7 +125,7 @@ void LWZ_SBA(
 
 	int indx = hlwz - 1;
 
-	void * hudev = lwz_get_hdev(g_plwz, indx);
+	HUDEV hudev = lwz_get_hdev(g_plwz, indx);
 
 	if (hudev == NULL) {
 		return;
@@ -169,7 +162,7 @@ void LWZ_PBA(LWZHANDLE hlwz, BYTE const *pbrightness_32bytes)
 	if (pbrightness_32bytes == NULL)
 		return;
 
-	void * hudev = lwz_get_hdev(g_plwz, indx);
+	HUDEV hudev = lwz_get_hdev(g_plwz, indx);
 
 	if (hudev == NULL) {
 		return;
@@ -198,7 +191,7 @@ DWORD LWZ_RAWWRITE(LWZHANDLE hlwz, BYTE const *pdata, DWORD ndata)
 	if (ndata > 32)
 	    ndata = 32;
 
-	void * hudev = lwz_get_hdev(g_plwz, indx);
+	HUDEV hudev = lwz_get_hdev(g_plwz, indx);
 
 	if (hudev == NULL) {
 		return 0;
@@ -232,7 +225,7 @@ DWORD LWZ_RAWREAD(LWZHANDLE hlwz, BYTE *pdata, DWORD ndata)
 	if (ndata > 64)
 	    ndata = 64;
 
-	void * hudev = lwz_get_hdev(g_plwz, indx);
+	HUDEV hudev = lwz_get_hdev(g_plwz, indx);
 
 	if (hudev == NULL) {
 		return 0;
@@ -514,7 +507,7 @@ static void lwz_register(lwz_context_t *h, int indx, HWND hwnd)
 	}
 }
 
-static void * lwz_get_hdev(lwz_context_t *h, int indx)
+static HUDEV lwz_get_hdev(lwz_context_t *h, int indx)
 {
 	if (indx < 0 ||
 	    indx >= LWZ_MAX_DEVICES)
@@ -670,7 +663,7 @@ static void lwz_refreshlist_attached(lwz_context_t *h)
 			continue;
 		}
 
-		device_tmp.hudev = usbdev_open(pdiddat->DevicePath);
+		device_tmp.hudev = usbdev_create(pdiddat->DevicePath);
 
 		if (device_tmp.hudev != NULL)
 		{
@@ -764,7 +757,7 @@ static void lwz_freelist(lwz_context_t *h)
 // simple fifo to move the WriteFile() calls to a seperate thread
 
 typedef struct {
-	void* hudev;
+	HUDEV hudev;
 	size_t ndata;
 	uint8_t data[32];
 } chunk_t;
@@ -797,7 +790,7 @@ static DWORD WINAPI QueueThreadProc(LPVOID lpParameter)
 	{
 		uint8_t buffer[64];
 
-		void * hudev = NULL;
+		HUDEV hudev = NULL;
 		size_t ndata = queue_pop(h, &hudev, &buffer[0], sizeof(buffer));
 
 		// exit thread if required
@@ -933,7 +926,7 @@ static void queue_wait_empty(HQUEUE hqueue)
 	}
 }
 
-static size_t queue_push(HQUEUE hqueue, void* hudev, uint8_t const *pdata, size_t ndata)
+static size_t queue_push(HQUEUE hqueue, HUDEV hudev, uint8_t const *pdata, size_t ndata)
 {
 	queue_t * const h = (queue_t*)hqueue;
 
@@ -1011,7 +1004,7 @@ static size_t queue_push(HQUEUE hqueue, void* hudev, uint8_t const *pdata, size_
 	}
 }
 
-static size_t queue_pop(HQUEUE hqueue, void **phudev, uint8_t *pbuffer, size_t nsize)
+static size_t queue_pop(HQUEUE hqueue, HUDEV *phudev, uint8_t *pbuffer, size_t nsize)
 {
 	queue_t * const h = (queue_t*)hqueue;
 
@@ -1090,275 +1083,3 @@ static size_t queue_pop(HQUEUE hqueue, void **phudev, uint8_t *pbuffer, size_t n
 		WaitForSingleObject(h->hwevent, INFINITE);
 	}
 }
-
-
-static void usbdev_close_internal(void *hudev);
-
-#define USB_READ_TIMOUT_MS 500
-
-typedef struct {
-	CRITICAL_SECTION cslock;
-	HANDLE hrevent;
-	HANDLE hwevent;
-	HANDLE hdev;
-	LONG refcount;
-} usbdev_context_t;
-
-
-static void* usbdev_open(LPCSTR devicepath)
-{
-	// create context
-
-	usbdev_context_t * const h = (usbdev_context_t*)malloc(sizeof(usbdev_context_t));
-
-	if (h == NULL)
-		return NULL;
-
-	memset(h, 0x00, sizeof(*h));
-	h->hdev = INVALID_HANDLE_VALUE;
-
-	InitializeCriticalSection(&h->cslock);
-
-	h->hrevent = CreateEvent(NULL, TRUE, FALSE, NULL);
-	h->hwevent = CreateEvent(NULL, TRUE, FALSE, NULL);
-
-	if (h->hrevent == NULL ||
-		h->hwevent == NULL)
-	{
-		goto Failed;
-	}
-
-	// open device
-
-	HANDLE hdev  = CreateFileA(
-		devicepath,
-		GENERIC_READ | GENERIC_WRITE,
-		FILE_SHARE_READ | FILE_SHARE_WRITE,
-		NULL,
-		OPEN_EXISTING,
-		FILE_FLAG_OVERLAPPED,
-		NULL);
-
-	if (hdev != INVALID_HANDLE_VALUE)
-	{
-		h->hdev = hdev;
-		h->refcount = 1;
-		return h;
-	}
-
-Failed:
-	usbdev_close_internal(h);
-	return NULL;
-}
-
-static void usbdev_close_internal(void *hudev)
-{
-	usbdev_context_t * const h = (usbdev_context_t*)hudev;
-
-	if (h == NULL)
-		return;
-
-	if (h->hrevent)
-	{
-		CloseHandle(h->hrevent);
-		h->hrevent = NULL;
-	}
-
-	if (h->hwevent)
-	{
-		CloseHandle(h->hwevent);
-		h->hwevent = NULL;
-	}
-
-	if (h->hdev != INVALID_HANDLE_VALUE)
-	{
-		CloseHandle(h->hdev);
-		h->hdev = INVALID_HANDLE_VALUE;
-	}
-
-	DeleteCriticalSection(&h->cslock);
-
-	free(h);
-}
-
-static void usbdev_release(void *hudev)
-{
-	usbdev_context_t * const h = (usbdev_context_t*)hudev;
-
-	if (h != NULL)
-	{
-		LONG refcount_new = InterlockedDecrement(&h->refcount);
-
-		if (refcount_new <= 0)
-		{
-			usbdev_close_internal(h);
-		}
-	}
-}
-
-static void usbdev_addref(void *hudev)
-{
-	usbdev_context_t * const h = (usbdev_context_t*)hudev;
-
-	if (h != NULL)
-	{
-		InterlockedIncrement(&h->refcount);
-	}
-}
-
-static HANDLE usbdev_handle(void *hudev)
-{
-	usbdev_context_t * const h = (usbdev_context_t*)hudev;
-	
-	if (h == NULL)
-		return INVALID_HANDLE_VALUE;
-
-	return h->hdev;
-}
-
-static DWORD usbdev_read(void * hudev, BYTE *pdata, DWORD ndata)
-{
-	usbdev_context_t * const h = (usbdev_context_t*)hudev;
-
-	if (h == NULL)
-		return NULL;
-
-	if (pdata == NULL)
-		return 0;
-
-	if (ndata > 64)
-	    ndata = 64;
-
-	AUTOLOCK(h->cslock);
-
-	int res = 0;
-	BYTE buffer[65];
-	DWORD nread = 0;
-	BOOL bres = FALSE;
-
-	OVERLAPPED ol = {};
-	ol.hEvent = h->hrevent;
-
-	bres = ReadFile(h->hdev, buffer, sizeof(buffer), NULL, &ol);
-
-	if (bres != TRUE)
-	{
-		DWORD dwerror = GetLastError();
-
-		if (dwerror == ERROR_IO_PENDING)
-		{
-			if (WaitForSingleObject(h->hrevent, USB_READ_TIMOUT_MS) != WAIT_OBJECT_0)
-			{
-				CancelIo(h->hdev);
-			}
-
-			bres = TRUE;
-		}
-	}
-
-	if (bres == TRUE)
-	{
-		bres = GetOverlappedResult(
-			h->hdev,
-			&ol,
-			&nread,
-			TRUE);
-	}
-
-	if (bres != TRUE)
-	{
-		DWORD dwerror = GetLastError();
-		_ASSERT(0);
-	}
-
-	if (nread <= 1 || bres != TRUE)
-		return 0;
-
-	nread -= 1; // skip report id
-
-	if (ndata > nread)
-	    ndata = nread;
-
-	memcpy(pdata, &buffer[1], ndata);
-
-	return ndata;
-}
-
-static DWORD usbdev_write(void * hudev, BYTE const *pdata, DWORD ndata)
-{
-	usbdev_context_t * const h = (usbdev_context_t*)hudev;
-	
-	if (h == NULL)
-		return NULL;
-
-	if (pdata == NULL || ndata == 0)
-		return 0;
-
-	if (ndata > 32)
-	    ndata = 32;
-
-	AUTOLOCK(h->cslock);
-
-	int res = 0;
-	DWORD nbyteswritten = 0;
-
-	BYTE buf[9]; 
-	buf[0] = 0; // report id
-
-	while (ndata > 0)
-	{
-		int const ncopy = (ndata > 8) ? 8 : ndata;
-
-		memset(&buf[1], 0x00, 8);
-		memcpy(&buf[1], pdata, ncopy);
-		pdata += ncopy;
-		ndata -= ncopy;
-
-		DWORD nwritten = 0;
-		DWORD const nwrite = 9;
-
-		OVERLAPPED ol = {};
-		ol.hEvent = h->hwevent;
-
-		BOOL bres = WriteFile(h->hdev, buf, nwrite, NULL, &ol);
-
-		if (bres != TRUE)
-		{
-			DWORD dwerror = GetLastError();
-
-			if (dwerror == ERROR_IO_PENDING)
-			{
-				if (WaitForSingleObject(h->hwevent, USB_READ_TIMOUT_MS) != WAIT_OBJECT_0)
-				{
-					CancelIo(h->hdev);
-				}
-
-				bres = TRUE;
-			}
-		}
-
-		if (bres == TRUE)
-		{
-			bres = GetOverlappedResult(
-				h->hdev,
-				&ol,
-				&nwritten,
-				TRUE);
-		}
-
-		if (bres != TRUE)
-		{
-			DWORD dwerror = GetLastError();
-			_ASSERT(0);
-		}
-
-		if (nwritten != nwrite || bres != TRUE) {
-			break;
-		}
-
-		nbyteswritten += ncopy;
-	}
-
-	return nbyteswritten;
-}
-

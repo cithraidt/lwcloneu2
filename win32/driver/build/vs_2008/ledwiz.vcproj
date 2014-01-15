@@ -188,6 +188,14 @@
 			RelativePath="..\..\include\ledwiz.h"
 			>
 		</File>
+		<File
+			RelativePath="..\..\src\usbdev.cpp"
+			>
+		</File>
+		<File
+			RelativePath="..\..\src\usbdev.h"
+			>
+		</File>
 	</Files>
 	<Globals>
 	</Globals>
