@@ -205,11 +205,7 @@ static void main_task(void)
 
 #endif
 
-	#if defined(ENABLE_PROFILING)
-	profile_stop();
-	#endif
-
-	sleep_mode();
+	sleep_ms(0);
 }
 
 

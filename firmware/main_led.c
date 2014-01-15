@@ -19,6 +19,7 @@
 #include <string.h>
 #include <avr/io.h>
 #include <avr/interrupt.h>
+#include <avr/wdt.h>
 #include <avr/sleep.h>
 
 #include <hwconfig.h>
@@ -101,11 +102,7 @@ int main(void)
 		// if we are here, there was no new message and no new panel report
 		// ==> enter idle mode
 
-		#if defined(ENABLE_PROFILER)
-		profile_stop();
-		#endif
-
-		sleep_mode();
+		sleep_ms(0);
 	}
 
 	return 0;

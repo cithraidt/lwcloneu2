@@ -24,7 +24,7 @@
 
 typedef struct {
 	uint8_t nlen;
-	uint8_t data[CHUNK_MAXSIZE - 1];
+	uint8_t data[1];
 } msg_t;
 
 
@@ -43,14 +43,20 @@ void msg_release(void);
 
 typedef enum {
 	DBGERROR = 0,
+	DBGLOG,
 	DBGINFO,
+	DBGTRACE,
 } debuglevel;
 
-#if defined(DEBUG_TX_UART_vect)
+#if defined(DEBUG_TX_UART_vect) || defined(DEBUG_TX_SOFT_UART_vect)
 
 #define DbgOut(_level_, _msg_, ...) do { \
 	if ((_level_) > DEBUGLEVEL) break; \
-	printf_P(((_level_) == DBGERROR) ? PSTR("[Error] ") : PSTR("[Info] ")); \
+	printf_P( \
+		((_level_) == DBGERROR)  ? PSTR("[Error] ") : \
+		((_level_) == DBGLOG)    ? PSTR("[Log] ") : \
+		((_level_) == DBGINFO)   ? PSTR("[Info] ") : \
+		((_level_) == DBGTRACE)  ? PSTR("[Trace] ") : PSTR("[] ")); \
 	printf_P(PSTR(_msg_), ##__VA_ARGS__); \
 	printf_P(PSTR("\n")); \
 } while (0)
@@ -69,6 +75,8 @@ typedef enum {
 void profile_start(void);
 void profile_stop(void);
 #endif
+
+void sleep_ms(uint16_t ms);
 
 
 

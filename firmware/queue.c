@@ -19,7 +19,7 @@
 
 
 static uint8_t fifo_getlevel(fifo_t const *f) { return f->wpos - f->rpos; }
-static uint8_t fifo_getfree(fifo_t const *f) { return (f->mask + 1) - fifo_getlevel(f); }
+static uint8_t fifo_getfree(fifo_t const *f) { return f->mask - fifo_getlevel(f) + 1; }
 
 
 int8_t queue_push(fifo_t *f, uint8_t x)
@@ -52,7 +52,7 @@ int8_t queue_pop(fifo_t *f, uint8_t *px)
 }
 
 
-uint8_t* chunk_pop(fifo_t *f)
+uint8_t* chunk_peek(fifo_t *f)
 {
 	uint8_t const ndata = fifo_getlevel(f);
 
@@ -67,7 +67,7 @@ uint8_t* chunk_pop(fifo_t *f)
 
 void chunk_release(fifo_t *f)
 {
-	f->rpos += (1 << CHUNK_MAXSIZE_LOG2);
+	f->rpos += f->chunksize;
 }
 
 
@@ -86,5 +86,5 @@ uint8_t* chunk_prepare(fifo_t *f)
 
 void chunk_push(fifo_t* f)
 {
-	f->wpos += (1 << CHUNK_MAXSIZE_LOG2);
+	f->wpos += f->chunksize;
 }

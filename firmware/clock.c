@@ -20,6 +20,7 @@
 #include <util/atomic.h>
 
 #include <hwconfig.h>
+#include "comm.h"
 #include "clock.h"
 
 
