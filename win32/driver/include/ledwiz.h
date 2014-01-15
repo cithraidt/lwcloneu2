@@ -11,9 +11,12 @@
 #if (_MSC_VER >= 1600) // starting with VisualStudio 2010 stdint.h is available
 #include <stdint.h>
 #else
+typedef signed char int8_t;
+typedef unsigned char uint8_t;
+typedef short int16_t;
+typedef unsigned short uint16_t;
 typedef int int32_t;
 typedef unsigned int uint32_t;
-typedef unsigned char uint8_t;
 #endif
 
 #else
@@ -116,10 +119,18 @@ void LWZCALL LWZ_SET_NOTIFY_EX(LWZNOTIFYPROC_EX notify_ex_callback, void *puser,
 /************************************************************************************************************************
 LWZ_RAWWRITE - write raw data to the device
 *************************************************************************************************************************
-return 0 for success, else error.
+return number of bytes written.
 ************************************************************************************************************************/
 
-int LWZ_RAWWRITE(LWZHANDLE hlwz, uint8_t const *pdata, uint32_t ndata);
+uint32_t LWZ_RAWWRITE(LWZHANDLE hlwz, uint8_t const *pdata, uint32_t ndata);
+
+/************************************************************************************************************************
+LWZ_RAWREAD - read raw data from the device
+*************************************************************************************************************************
+return number of bytes read.
+************************************************************************************************************************/
+
+uint32_t LWZ_RAWREAD(LWZHANDLE hlwz, uint8_t *pdata, uint32_t ndata);
 
 
 #ifdef __cplusplus

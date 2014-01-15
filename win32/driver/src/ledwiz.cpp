@@ -17,6 +17,7 @@
 #include <string.h>
 
 #include <windows.h>
+#include <crtdbg.h>
 #include <Setupapi.h>
 
 extern "C" {
@@ -109,6 +110,7 @@ static void queue_close(HQUEUE hqueue, bool unload);
 static HQUEUE queue_open(void);
 static size_t queue_push(HQUEUE hqueue, devobj *pdo, uint8_t const *pdata, size_t ndata);
 static size_t queue_pop(HQUEUE hqueue, devobj **ppdo, uint8_t *pbuffer, size_t nsize);
+static void queue_wait_empty(HQUEUE hqueue);
 
 
 struct CAutoLockCS  // helper class to lock a critical section, and unlock it automatically
@@ -271,6 +273,47 @@ int LWZ_RAWWRITE(LWZHANDLE hlwz, BYTE const *pdata, DWORD ndata)
 	#endif
 
 	return res;
+}
+
+DWORD LWZ_RAWREAD(LWZHANDLE hlwz, BYTE *pdata, DWORD ndata)
+{
+	AUTOLOCK(g_cs);
+
+	int indx = hlwz - 1;
+
+	if (pdata == NULL)
+		return 0;
+
+	if (ndata > 64)
+	    ndata = 64;
+
+	devobj * pdo = lwz_get_hdev(g_plwz, indx);
+
+	if (pdo == NULL) {
+		return 0;
+	}
+
+	#if defined(USE_SEPERATE_IO_THREAD)
+	queue_wait_empty(g_plwz->hqueue);
+	#endif
+
+	int res = 0;
+	BYTE buffer[65];
+	DWORD nread = 0;
+	BOOL bres = FALSE;
+
+	WaitForSingleObject(g_hmutex, INFINITE);
+	{
+		bres = ReadFile(pdo->hdev, buffer, sizeof(buffer), &nread, NULL);
+	}
+	ReleaseMutex(g_hmutex);
+
+	if (ndata > nread)
+	    ndata = nread;
+
+	memcpy(pdata, buffer, ndata);
+
+	return ndata;
 }
 
 void LWZ_REGISTER(LWZHANDLE hlwz, void * hwin)
@@ -827,9 +870,11 @@ typedef struct {
 	CRITICAL_SECTION cs;
 	HANDLE hrevent;
 	HANDLE hwevent;
+	HANDLE heevent;
 	HANDLE hqevent;
 	bool rblocked;
 	bool wblocked;
+	bool eblocked;
 	chunk_t buf[QUEUE_LENGTH];
 } queue_t;
 
@@ -864,8 +909,15 @@ static DWORD WINAPI QueueThreadProc(LPVOID lpParameter)
 
 				size_t const npayload = (ndata > 8) ? 8 : ndata;
 				DWORD nwritten = 0;
+				DWORD nwrite = 1 + (DWORD)npayload;
 
-				WriteFile(pdo->hdev, b, 1 + (DWORD)npayload, &nwritten, NULL);
+				BOOL bresult = WriteFile(pdo->hdev, b, nwrite, &nwritten, NULL);
+
+				if (bresult != TRUE || nwritten != nwrite)
+				{
+					DWORD dwerror = GetLastError();
+					_ASSERT(0);
+				}
 
 				b += npayload;
 				ndata -= npayload;
@@ -949,11 +1001,13 @@ static HQUEUE queue_open(void)
 
 	h->hrevent = CreateEvent(NULL, FALSE, FALSE, NULL);
 	h->hwevent = CreateEvent(NULL, FALSE, FALSE, NULL);
+	h->heevent = CreateEvent(NULL, FALSE, FALSE, NULL);
 	h->hqevent = CreateEvent(NULL, FALSE, FALSE, NULL);
 
 	if (h->hrevent == NULL ||
 		h->hwevent == NULL ||
-		h->hqevent == NULL)
+		h->heevent == NULL ||
+		h->hqevent == NULL )
 	{
 		goto Failed;
 	}
@@ -969,6 +1023,32 @@ static HQUEUE queue_open(void)
 Failed:
 	queue_close(h, false);
 	return NULL;
+}
+
+static void queue_wait_empty(HQUEUE hqueue)
+{
+	queue_t * const h = (queue_t*)hqueue;
+
+	for (;;)
+	{
+		{
+			AUTOLOCK(h->cs);
+
+			if (h->state != 0) {
+				return;
+			}
+
+			if (h->level == 0)
+			{
+				h->eblocked = false;
+				return;
+			}
+
+			h->eblocked = true;
+		}
+
+		WaitForSingleObject(h->heevent, INFINITE);
+	}
 }
 
 static size_t queue_push(HQUEUE hqueue, devobj* pdo, uint8_t const *pdata, size_t ndata)
@@ -1102,6 +1182,10 @@ static size_t queue_pop(HQUEUE hqueue, devobj **ppdo, uint8_t *pbuffer, size_t n
 				}
 
 				h->level -= 1;
+
+				if (h->level == 0 && h->eblocked) {
+					SetEvent(h->heevent);
+				}
 
 				h->rblocked = false;
 				do_unblock = h->wblocked;
