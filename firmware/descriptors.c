@@ -57,6 +57,7 @@ typedef enum {
 	#define MAP(x, y) x,
 	USB_STRING_TABLE(MAP)
 	#undef MAP
+	SerialNumberString_id
 } UsbStringsEnum;
 
 static const USB_Descriptor_String_t PROGMEM LanguageString =
@@ -327,13 +328,71 @@ static USB_Descriptor_Device_t DeviceDescriptor =
 	.ReleaseNumber          = USB_VERSION_BCD,
 	.ManufacturerStrIndex   = ManufacturerString_id,
 	.ProductStrIndex        = ProductString_id,
-	.SerialNumStrIndex      = NO_DESCRIPTOR,
+	.SerialNumStrIndex      = SerialNumberString_id,
 	.NumberOfConfigurations = FIXED_NUM_CONFIGURATIONS
+};
+
+static char toHex(uint8_t x)
+{
+	if (x < 10)
+		return '0' + x;
+
+	return x + 'A' - 10;
+}
+
+typedef enum {
+	config_mask_joysticks  = 3 << 0,
+	config_flag_keyboard   = 1 << 2,
+	config_flag_mouse      = 1 << 3,
+	config_flag_consumer   = 1 << 4,
+	config_mask_panel      = config_mask_joysticks | config_flag_keyboard | config_flag_mouse | config_flag_consumer,
+	config_flag_led        = 1 << 5,
+} usb_config_flags;
+
+static struct {
+	USB_Descriptor_Header_t Header;
+	uint16_t UnicodeString[15];
+} SerialNumberString = {
+	.Header = {
+		.Size = USB_STRING_LEN(15), 
+		.Type = DTYPE_String
+	} 
 };
 
 void SetProductID(uint16_t id)
 {
 	DeviceDescriptor.ProductID = id;
+
+	uint8_t const ledwiz_id_minus1 = id & 0xFF;
+	uint16_t const ver = USB_VERSION_BCD;
+	uint16_t const flags = 
+		#if defined(ENABLE_PANEL_DEVICE)
+		(config_mask_joysticks & NUM_JOYSTICKS) |
+		(USE_KEYBOARD != 0 ? config_flag_keyboard : 0) |
+		(USE_MOUSE != 0 ? config_flag_mouse : 0) |
+		(USE_CONSUMER != 0 ? config_flag_consumer : 0) |
+		#endif
+		#if defined(ENABLE_LED_DEVICE)
+		config_flag_led |
+		#endif
+		0;
+
+	uint16_t * const c = &SerialNumberString.UnicodeString[0];
+	c[0] = 'L';
+	c[1] = 'W';
+	c[2] = 'C';
+	c[3] = '-';
+	c[4] = '0' + (((ver >>  8) & 0xFF) / 10);
+	c[5] = '0' + (((ver >>  8) & 0xFF) % 10);
+	c[6] = '0' + ((ver >>  4) & 0x0F);
+	c[7] = '0' + ((ver >>  0) & 0x0F);
+	c[8] = '-';
+	c[9] = toHex((ledwiz_id_minus1 >> 4) & 0x0F);
+	c[10] = toHex((ledwiz_id_minus1 >> 0) & 0x0F);
+	c[11] = '-';
+	c[12] = toHex((flags >> 8) & 0x0F);
+	c[13] = toHex((flags >> 4) & 0x0F);
+	c[14] = toHex((flags >> 0) & 0x0F);
 }
 
 /** Configuration descriptor structure. This descriptor, located in FLASH memory, describes the usage
@@ -475,6 +534,12 @@ uint16_t CALLBACK_USB_GetDescriptor(
 				case LanguageString_id:
 					Address = &LanguageString;
 					Size    = pgm_read_byte(&LanguageString.Header.Size);
+					break;
+
+				case SerialNumberString_id:
+					*DescriptorMemorySpace = MEMSPACE_RAM;
+					Address = &SerialNumberString;
+					Size = SerialNumberString.Header.Size;
 					break;
 
 				#define MAP(name, str) \
