@@ -179,6 +179,8 @@ static void MouseMoveY(uint8_t direction)
 
 static void CheckMouseUpdate(void)
 {
+	#if defined(MOUSE_X_CLK_INDEX) && defined(MOUSE_X_DIR_INDEX)
+
 	uint8_t mouse_clk_state = InputState[MOUSE_X_CLK_INDEX];
 	uint8_t mouse_dir_state = InputState[MOUSE_X_DIR_INDEX];
 
@@ -200,6 +202,10 @@ static void CheckMouseUpdate(void)
 		mouse_x_last_dir_state = mouse_dir_state;
 	}
 
+	#endif
+
+	#if defined(MOUSE_Y_CLK_INDEX) && defined(MOUSE_Y_DIR_INDEX)
+
 	mouse_clk_state = InputState[MOUSE_Y_CLK_INDEX];
 	mouse_dir_state = InputState[MOUSE_Y_DIR_INDEX];
 
@@ -220,6 +226,8 @@ static void CheckMouseUpdate(void)
 
 		mouse_y_last_dir_state = mouse_dir_state;
 	}
+
+	#endif
 }
 
 static uint8_t NeedMouseUpdate(void) { return need_mouse_update; }
@@ -273,6 +281,8 @@ static void SetNeedUpdate(uint8_t index)
 	#endif
 }
 
+#if defined(SHIFT_SWITCH_INDEX)
+
 static void ShiftKeyCleanUp(void)
 {
 	if (shift_key_cleanup == 1)
@@ -301,7 +311,7 @@ static void ShiftKeyCleanUp(void)
 		bool no_update = !need_consumer_update && !need_key_update;
 
 		#if (USE_MOUSE != 0)
-		no_update = no_uptdate && !NeedMouseUpdate();
+		no_update = no_update && !NeedMouseUpdate();
 		#endif
 
 		#if (NUM_JOYSTICKS >= 1)
@@ -316,9 +326,33 @@ static void ShiftKeyCleanUp(void)
 	}
 }
 
+#endif
+
 static uint8_t NeedUpdate(void)
 {
+	#if defined(SHIFT_SWITCH_INDEX)
 	ShiftKeyCleanUp();
+	#endif
+
+	#if (USE_MOUSE != 0)
+	if (NeedMouseUpdate())
+	{
+		need_mouse_update = 0;
+		return ID_Mouse;
+	}
+	#endif
+
+	if (need_key_update)
+	{
+		need_key_update = 0;
+		return ID_Keyboard;
+	}
+
+	if (need_consumer_update)
+	{
+		need_consumer_update = 0;
+		return ID_Consumer;
+	}
 
 	#if (NUM_JOYSTICKS >= 1)
 	if (NeedJoystickUpdate())
@@ -345,34 +379,21 @@ static uint8_t NeedUpdate(void)
 	}
 	#endif
 
-	#if (USE_MOUSE != 0)
-	if (need_mouse_update)
-	{
-		need_mouse_update = 0;
-		return ID_Mouse;
-	}
-	#endif
-
-	if (need_key_update)
-	{
-		need_key_update = 0;
-		return ID_Keyboard;
-	}
-
-	if (need_consumer_update)
-	{
-		need_consumer_update = 0;
-		return ID_Consumer;
-	}
-
 	return ID_Unknown;
 }
 
 static void SetInputCount(uint8_t index, uint8_t condition)
 {
-	#if (USE_MOUSE != 0)
-	if ((index == MOUSE_X_CLK_INDEX) || (index == MOUSE_X_DIR_INDEX) ||
-		(index == MOUSE_Y_CLK_INDEX) || (index == MOUSE_Y_DIR_INDEX))
+	#if (USE_MOUSE != 0) && defined(MOUSE_X_CLK_INDEX) && defined(MOUSE_X_DIR_INDEX)
+	if ((index == MOUSE_X_CLK_INDEX) || (index == MOUSE_X_DIR_INDEX))
+	{
+		InputState[index] = condition;
+		return;
+	}
+	#endif
+
+	#if (USE_MOUSE != 0) && defined(MOUSE_Y_CLK_INDEX) && defined(MOUSE_Y_DIR_INDEX)
+	if ((index == MOUSE_Y_CLK_INDEX) || (index == MOUSE_Y_DIR_INDEX))
 	{
 		InputState[index] = condition;
 		return;
@@ -471,11 +492,13 @@ static void SetInputCount(uint8_t index, uint8_t condition)
 
 	if (changed)
 	{
+		#if defined(SHIFT_SWITCH_INDEX)
 		if (index == SHIFT_SWITCH_INDEX)
 		{
 			shift_key_cleanup = 1;
 		}
 		else
+		#endif
 		{
 			SetNeedUpdate(index);
 		}
@@ -527,7 +550,7 @@ static uint8_t ReportKeyboard(void)
 	uint8_t i;
 	uint8_t r = 2;
 
-	memset(&ReportBuffer[0], 0x00, sizeof(ReportBuffer));
+	memset(&ReportBuffer[1], 0x00, sizeof(ReportBuffer) - 1);
 
 	ReportBuffer[0] = ID_Keyboard;
 

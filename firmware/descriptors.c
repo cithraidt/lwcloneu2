@@ -85,6 +85,22 @@ USB_STRING_TABLE(MAP)
 
 #if defined(ENABLE_PANEL_DEVICE)
 
+#if !defined(USE_KEYBOARD)
+#define USE_KEYBOARD 0
+#endif
+
+#if !defined(USE_CONSUMER)
+#define USE_CONSUMER 0
+#endif
+
+#if !defined(NUM_JOYSTICKS)
+#define NUM_JOYSTICKS 0
+#endif
+
+#if !defined(USE_MOUSE)
+#define USE_MOUSE 0
+#endif
+
 enum HID_KeyModifierCodes
 {
 	KEY_LeftControl      = 0xE0,
