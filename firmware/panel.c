@@ -283,9 +283,9 @@ void panel_init(void)
 		DDR##port &= ~(1 << pin);
 	ADC_MAPPING_TABLE(MAP)
 	#undef MAP
-	#endif
 
 	ADC_init();
+	#endif
 };
 
 static void SetNeedUpdate(uint8_t index)
