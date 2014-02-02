@@ -31,6 +31,7 @@
 
 #include <hwconfig.h>
 #include "panel.h"
+#include "comm.h"
 #include "keydefs.h"
 #include "clock.h"
 
@@ -45,16 +46,30 @@ const int DEBOUNCE = 5;
 
 // derive the number of inputs from the table, let the compiler check that no pin is used twice
 enum { 
-	#define MAP(X, pin, normal_id, shift_id) X##pin##_index,
+	#define MAP(port, pin, normal_id, shift_id) port##pin##_index,
 	PANEL_MAPPING_TABLE(MAP)
 	NUMBER_OF_INPUTS,
 	#undef MAP
 	#if defined(LED_MAPPING_TABLE)
-	#define MAP(X, pin, inv) X##pin##_index,
+	#define MAP(port, pin, inv) port##pin##_index,
 	LED_MAPPING_TABLE(MAP)
 	#undef MAP
 	#endif
+	#if defined(ADC_MAPPING_TABLE)
+	#define MAP(port, pin, mux, minval, maxval, joyid, axis) port##pin##_index,
+	ADC_MAPPING_TABLE(MAP)
+	#undef MAP
+	#endif
 };
+
+#if defined(ADC_MAPPING_TABLE)
+enum {
+	#define MAP(port, pin, mux, minval, maxval, joyid, axis) port##pin##_adcindex,
+	ADC_MAPPING_TABLE(MAP)
+	#undef MAP
+	NUM_ADC_CHANNELS
+};
+#endif
 
 static uint8_t ReportBuffer[8];
 static uint8_t InputState[NUMBER_OF_INPUTS];
@@ -78,6 +93,15 @@ static uint8_t mouse_y_last_dir_state = 0;
 static int8_t mouse_y_count = 0;
 #define MOUSE_X_DELTA 1
 #define MOUSE_Y_DELTA 1
+#endif
+
+#if defined(ENABLE_ANALOG_INPUT)
+static uint16_t adc_values[NUM_ADC_CHANNELS] = {0};
+static const uint8_t adc_mux_table[NUM_ADC_CHANNELS] = {
+	#define MAP(port, pin, mux, minval, maxval, joyid, axis) mux,
+	ADC_MAPPING_TABLE(MAP)
+	#undef MAP
+};
 #endif
 
 
@@ -120,6 +144,13 @@ static uint8_t IsJoystickCode(uint8_t key, uint8_t joy)
 static uint8_t NeedJoystickUpdate(void)
 {
 	uint8_t i;
+
+	#if defined(ENABLE_ANALOG_INPUT) && defined(ADC_MAPPING_TABLE)
+	#define MAP(port, pin, mux, minval, maxval, joyid, axis) \
+	need_joystick_update[joyid - ID_Joystick1] = 1;
+	ADC_MAPPING_TABLE(MAP)
+	#undef MAP
+	#endif
 
 	for (i = 0; i < NUM_JOYSTICKS; i++)
 	{
@@ -245,7 +276,17 @@ void panel_init(void)
 		DDR##port &= ~(1 << pin);
 	PANEL_MAPPING_TABLE(MAP)
 	#undef MAP
-}
+
+	#if defined(ENABLE_ANALOG_INPUT) && defined(ADC_MAPPING_TABLE)
+	#define MAP(port, pin, mux, minval, maxval, joyid, axis) \
+		PORT##port &= ~(1 << pin); \
+		DDR##port &= ~(1 << pin);
+	ADC_MAPPING_TABLE(MAP)
+	#undef MAP
+	#endif
+
+	ADC_init();
+};
 
 static void SetNeedUpdate(uint8_t index)
 {
@@ -511,9 +552,7 @@ void panel_ScanInput(void)
 		return;
 	}
 
-	uint8_t i = 0;
-
-	#define MAP(port, pin, normal_id, shift_id) SetInputCount(i++, 0 == (PIN##port & (1 << pin)));
+	#define MAP(port, pin, normal_id, shift_id) SetInputCount(port##pin##_index, 0 == (PIN##port & (1 << pin)));
 	PANEL_MAPPING_TABLE(MAP)
 	#undef MAP
 
@@ -597,14 +636,44 @@ static uint8_t ReportKeyboard(void)
 
 #if (NUM_JOYSTICKS >= 1)
 
+#if defined(ENABLE_ANALOG_INPUT)
+
+uint16_t ADC_getvalue(uint8_t id)
+{
+	uint16_t x;
+
+	ATOMIC_BLOCK(ATOMIC_FORCEON)
+	{
+		x = adc_values[id];
+	}
+
+	return x;
+}
+
+static int16_t joyval(uint16_t x, int16_t minval, int16_t maxval)
+{
+	return (int16_t)(((int32_t)x * (int32_t)(maxval - minval) + (1 << 9)) >> 10) + minval - 2047;
+}
+
+#endif
+
 static uint8_t ReportJoystick(uint8_t id)
 {
 	uint8_t i;
-	uint8_t joy_x = 0x00;
-	uint8_t joy_y = 0x00;
+	int16_t joy_x = 0;
+	int16_t joy_y = 0;
 	uint8_t joy_b = 0;
 
 	ReportBuffer[0] = id;
+
+	#if defined(ENABLE_ANALOG_INPUT) && defined(ADC_MAPPING_TABLE)
+	#define MAP(port, pin, mux, minval, maxval, joyid, axis) \
+		if ((axis == 0) && (joyid == id)) { joy_x = joyval(ADC_getvalue(port##pin##_adcindex), (int16_t)(minval * 4094), (int16_t)(maxval * 4094)); } \
+		if ((axis == 1) && (joyid == id)) { joy_y = joyval(ADC_getvalue(port##pin##_adcindex), (int16_t)(minval * 4094), (int16_t)(maxval * 4094)); }
+	ADC_MAPPING_TABLE(MAP)
+	#undef MAP
+	#endif
+
 	id = (id - ID_Joystick1) * NR_OF_EVENTS_PER_JOY;
 
 	for (i = 0; i < NUMBER_OF_INPUTS; i++)
@@ -615,17 +684,16 @@ static uint8_t ReportJoystick(uint8_t id)
 			switch (key)
 			{
 			case J1_Left:
-				joy_x = 0x0F;
+				joy_x = -2047;
 				break;
 			case J1_Right:
-				joy_x = 0x01;
+				joy_x = +2047;
 				break;
-
 			case J1_Up:
-				joy_y = 0xF0;
+				joy_y = -2047;
 				break;
 			case J1_Down:
-				joy_y = 0x10;
+				joy_y = +2047;
 				break;
 
 			case J1_Button1:
@@ -645,10 +713,12 @@ static uint8_t ReportJoystick(uint8_t id)
 		}
 	}
 
-	ReportBuffer[1] = joy_x | joy_y;
-	ReportBuffer[2] = joy_b;
+	ReportBuffer[1] = ((uint16_t)joy_x & 0xFF);
+	ReportBuffer[2] = (((uint16_t)joy_y & 0x0F) << 4) | (((uint16_t)joy_x >> 8) & 0x0F);
+	ReportBuffer[3] = (((uint16_t)joy_y >> 4) & 0xFF);
+	ReportBuffer[4] = joy_b;
 
-	return 3;
+	return 5;
 }
 
 #endif
@@ -748,6 +818,41 @@ uint8_t panel_get_report(uint8_t **ppdata)
 
 	return ndata;
 }
+
+
+#if defined(ENABLE_ANALOG_INPUT)
+
+// ADC Interrupt Routine
+
+ISR(ADC_vect)
+{
+	#if defined(ENABLE_PROFILING)
+	profile_start();
+	#endif
+
+	static int i = 0;
+
+	// get value
+
+	adc_values[i] = ADC;
+
+	// cycle
+
+	i -= 1;
+
+	if (i < 0) 
+		i += NUM_ADC_CHANNELS;
+
+	// set mux channel for the next conversion
+
+	ADC_setmux(adc_mux_table[i]);
+
+	// start new conversion
+
+	ADCSRA |= (1 << ADSC);
+}
+
+#endif
 
 
 

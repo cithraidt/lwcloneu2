@@ -169,7 +169,7 @@ static void main_task(void)
 
 		if (pmsg->nlen < 2 || pmsg->nlen > 8)
 		{
-			DbgOut(DBGERROR, "main_led, invalid framesize");
+			DbgOut(DBGERROR, "main_usb, invalid framesize");
 		}
 		else
 		{

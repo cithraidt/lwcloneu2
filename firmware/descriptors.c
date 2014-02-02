@@ -174,12 +174,13 @@ const USB_Descriptor_HIDReport_Datatype_t PROGMEM PanelReport[] =
 	0x85, ID_Joystick1,     //     REPORT_ID (ID_Joystick1)
 	0x09, 0x30,             //     USAGE (X)
 	0x09, 0x31,             //     USAGE (Y)
-	0x15, 0xFF,             //     LOGICAL_MINIMUM (-1)
-	0x25, 0x01,             //     LOGICAL_MAXIMUM (1)
-	0x75, 0x04,             //     REPORT_SIZE (4)
+	HID_RI_LOGICAL_MINIMUM(16, -2047),
+	HID_RI_LOGICAL_MAXIMUM(16, 2047),
+	0x75, 0x0C,             //     REPORT_SIZE (12)
 	0x95, 0x02,             //     REPORT_COUNT (2)
 	0x81, 0x02,             //     INPUT (Data,Var,Abs)
-	0x15, 0x00,             //     LOGICAL_MINIMUM (0)
+	HID_RI_LOGICAL_MINIMUM(8, 0),
+	HID_RI_LOGICAL_MAXIMUM(8, 1),
 	0x75, 0x01,             //     REPORT_SIZE (1)
 	0x95, 0x08,             //     REPORT_COUNT (8)
 	0x05, 0x09,             //     USAGE_PAGE (Button)
@@ -199,12 +200,13 @@ const USB_Descriptor_HIDReport_Datatype_t PROGMEM PanelReport[] =
 	0x85, ID_Joystick2,     //     REPORT_ID (ID_Joystick2)
 	0x09, 0x30,             //     USAGE (X)
 	0x09, 0x31,             //     USAGE (Y)
-	0x15, 0xFF,             //     LOGICAL_MINIMUM (-1)
-	0x25, 0x01,             //     LOGICAL_MAXIMUM (1)
-	0x75, 0x04,             //     REPORT_SIZE (4)
+	HID_RI_LOGICAL_MINIMUM(16, -2047),
+	HID_RI_LOGICAL_MAXIMUM(16, 2047),
+	0x75, 0x0C,             //     REPORT_SIZE (12)
 	0x95, 0x02,             //     REPORT_COUNT (2)
 	0x81, 0x02,             //     INPUT (Data,Var,Abs)
-	0x15, 0x00,             //     LOGICAL_MINIMUM (0)
+	HID_RI_LOGICAL_MINIMUM(8, 0),
+	HID_RI_LOGICAL_MAXIMUM(8, 1),
 	0x75, 0x01,             //     REPORT_SIZE (1)
 	0x95, 0x08,             //     REPORT_COUNT (8)
 	0x05, 0x09,             //     USAGE_PAGE (Button)
@@ -224,12 +226,13 @@ const USB_Descriptor_HIDReport_Datatype_t PROGMEM PanelReport[] =
 	0x85, ID_Joystick3,     //     REPORT_ID (ID_Joystick3)
 	0x09, 0x30,             //     USAGE (X)
 	0x09, 0x31,             //     USAGE (Y)
-	0x15, 0xFF,             //     LOGICAL_MINIMUM (-1)
-	0x25, 0x01,             //     LOGICAL_MAXIMUM (1)
-	0x75, 0x04,             //     REPORT_SIZE (4)
+	HID_RI_LOGICAL_MINIMUM(16, -2047),
+	HID_RI_LOGICAL_MAXIMUM(16, 2047),
+	0x75, 0x0C,             //     REPORT_SIZE (12)
 	0x95, 0x02,             //     REPORT_COUNT (2)
 	0x81, 0x02,             //     INPUT (Data,Var,Abs)
-	0x15, 0x00,             //     LOGICAL_MINIMUM (0)
+	HID_RI_LOGICAL_MINIMUM(8, 0),
+	HID_RI_LOGICAL_MAXIMUM(8, 1),
 	0x75, 0x01,             //     REPORT_SIZE (1)
 	0x95, 0x08,             //     REPORT_COUNT (8)
 	0x05, 0x09,             //     USAGE_PAGE (Button)
@@ -249,12 +252,13 @@ const USB_Descriptor_HIDReport_Datatype_t PROGMEM PanelReport[] =
 	0x85, ID_Joystick4,     //     REPORT_ID (ID_Joystick4)
 	0x09, 0x30,             //     USAGE (X)
 	0x09, 0x31,             //     USAGE (Y)
-	0x15, 0xFF,             //     LOGICAL_MINIMUM (-1)
-	0x25, 0x01,             //     LOGICAL_MAXIMUM (1)
-	0x75, 0x04,             //     REPORT_SIZE (4)
+	HID_RI_LOGICAL_MINIMUM(16, -2047),
+	HID_RI_LOGICAL_MAXIMUM(16, 2047),
+	0x75, 0x0C,             //     REPORT_SIZE (12)
 	0x95, 0x02,             //     REPORT_COUNT (2)
 	0x81, 0x02,             //     INPUT (Data,Var,Abs)
-	0x15, 0x00,             //     LOGICAL_MINIMUM (0)
+	HID_RI_LOGICAL_MINIMUM(8, 0),
+	HID_RI_LOGICAL_MAXIMUM(8, 1),
 	0x75, 0x01,             //     REPORT_SIZE (1)
 	0x95, 0x08,             //     REPORT_COUNT (8)
 	0x05, 0x09,             //     USAGE_PAGE (Button)
