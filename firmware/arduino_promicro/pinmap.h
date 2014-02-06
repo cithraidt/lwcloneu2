@@ -27,6 +27,8 @@
 #define MOUSE_X_DIR_INDEX   10
 #define MOUSE_Y_CLK_INDEX   11
 #define MOUSE_Y_DIR_INDEX   12
+#define MOUSE_X_DELTA 2
+#define MOUSE_Y_DELTA 2
 
 #define SHIFT_SWITCH_INDEX   13
 

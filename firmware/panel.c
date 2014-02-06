@@ -91,8 +91,12 @@ static int8_t mouse_x_count = 0;
 static uint8_t mouse_y_last_clk_state = 0;
 static uint8_t mouse_y_last_dir_state = 0;
 static int8_t mouse_y_count = 0;
+#if !defined(MOUSE_X_DELTA)
 #define MOUSE_X_DELTA 1
+#endif
+#if !defined(MOUSE_Y_DELTA)
 #define MOUSE_Y_DELTA 1
+#endif
 #endif
 
 #if defined(ENABLE_ANALOG_INPUT)

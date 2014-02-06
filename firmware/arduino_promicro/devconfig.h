@@ -22,6 +22,7 @@
  USB device config
 ****************************************/
 
+#define ENABLE_LED_DEVICE
 #define ENABLE_ANALOG_INPUT
 #define ENABLE_PANEL_DEVICE
 #define NUM_JOYSTICKS 2
