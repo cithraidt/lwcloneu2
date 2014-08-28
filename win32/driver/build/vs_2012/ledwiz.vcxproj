@@ -166,9 +166,11 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="..\..\src\ledwiz.cpp" />
+    <ClCompile Include="..\..\src\usbdev.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\include\ledwiz.h" />
+    <ClInclude Include="..\..\src\usbdev.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
