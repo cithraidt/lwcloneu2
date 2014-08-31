@@ -303,6 +303,9 @@ void EVENT_USB_Device_ControlRequest(void)
 			}
 			else
 			{
+				uint8_t temp[8];
+				Endpoint_Read_Control_Stream_LE(temp, 8); // drop data
+
 				DbgOut(DBGERROR, "HID_REQ_SetReport: buffer overflow");
 			}
 

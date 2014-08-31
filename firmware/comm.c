@@ -227,7 +227,7 @@ void sleep_ms(uint16_t ms)
 
 #if defined(DATA_TX_UART_vect)
 
-CREATE_FIFO(g_txfifo, 0, 6)
+CREATE_FIFO(g_txfifo, 2, 4)
 
 msg_t* msg_prepare(void)
 {
@@ -302,7 +302,7 @@ ISR(DATA_TX_UART_vect)
 
 #if defined(DATA_RX_UART_vect)
 
-CREATE_FIFO(g_rxfifo, 0, 6)
+CREATE_FIFO(g_rxfifo, 2, 4)
 
 msg_t* msg_recv(void)
 {
