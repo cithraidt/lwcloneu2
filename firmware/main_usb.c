@@ -76,10 +76,15 @@ int main(void)
 
 	DbgOut(DBGINFO, "enter main loop");
 
+	do {
+		USB_USBTask();
+	} while (USB_DeviceState != DEVICE_STATE_Configured);
+
 	for (;;)
 	{
-		main_task();
 		USB_USBTask();
+		main_task();
+		sleep_ms(0);
 	}
 }
 
@@ -145,11 +150,6 @@ static void main_task(void)
 {
 #if defined(ENABLE_PANEL_DEVICE)
 
-	/* Device must be connected and configured */
-	if (USB_DeviceState != DEVICE_STATE_Configured) {
-		return;
-	}
-
 	/* Select the Joystick Report Endpoint */
 	Endpoint_SelectEndpoint(PANEL_EPADDR);
 
@@ -204,8 +204,6 @@ static void main_task(void)
 	#endif
 
 #endif
-
-	sleep_ms(0);
 }
 
 
@@ -229,6 +227,7 @@ void EVENT_USB_Device_ConfigurationChanged(void)
 {
 	// Setup HID Report Endpoint
 
+	Endpoint_ConfigureEndpoint(MISC_EPADDR, EP_TYPE_INTERRUPT, MISC_EPSIZE, 1);
 	#if defined(ENABLE_LED_DEVICE)
 	Endpoint_ConfigureEndpoint(LED_EPADDR, EP_TYPE_INTERRUPT, LED_EPSIZE, 1);
 	#endif

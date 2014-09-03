@@ -83,6 +83,24 @@ USB_STRING_TABLE(MAP)
  *  more details on HID report descriptors.
  */
 
+static const USB_Descriptor_HIDReport_Datatype_t PROGMEM MiscReport[] =
+{
+	HID_RI_USAGE_PAGE(16, 0xFF00), /* Vendor Page 0 */
+	HID_RI_USAGE(8, 0x01), /* Vendor Usage 1 */
+	HID_RI_COLLECTION(8, 0x01), /* Vendor Usage 1 */
+		HID_RI_LOGICAL_MINIMUM(8, 0x00),
+		HID_RI_LOGICAL_MAXIMUM(8, 0xFF),
+		HID_RI_REPORT_SIZE(8, 0x08),
+		HID_RI_REPORT_COUNT(8, 64),
+		HID_RI_USAGE(8, 0x01), /* Vendor Usage 1 */
+		HID_RI_INPUT(8, HID_IOF_DATA | HID_IOF_VARIABLE | HID_IOF_ABSOLUTE),
+		HID_RI_REPORT_COUNT(8, 8),
+		HID_RI_USAGE(8, 0x01), /* Vendor Usage 1 */
+		HID_RI_OUTPUT(8, HID_IOF_DATA | HID_IOF_VARIABLE | HID_IOF_ABSOLUTE | HID_IOF_NON_VOLATILE),
+	HID_RI_END_COLLECTION(0),
+};
+
+
 #if defined(ENABLE_PANEL_DEVICE)
 
 #if !defined(USE_KEYBOARD)
@@ -309,20 +327,17 @@ const USB_Descriptor_HIDReport_Datatype_t PROGMEM PanelReport[] =
 
 static const USB_Descriptor_HIDReport_Datatype_t PROGMEM LEDReport[] =
 {
-	HID_RI_USAGE_PAGE(16, 0xFF00), /* Vendor Page 0 */
+	HID_RI_USAGE_PAGE(16, 0xFF10), /* Vendor Page 0 */
 	HID_RI_USAGE(8, 0x01), /* Vendor Usage 1 */
 	HID_RI_COLLECTION(8, 0x01), /* Vendor Usage 1 */
+		HID_RI_LOGICAL_MINIMUM(8, 0x00),
+		HID_RI_LOGICAL_MAXIMUM(8, 0xFF),
+		HID_RI_REPORT_SIZE(8, 0x08),
+		HID_RI_REPORT_COUNT(8, 64),
 		HID_RI_USAGE(8, 0x02), /* Vendor Usage 2 */
-		HID_RI_LOGICAL_MINIMUM(8, 0x00),
-		HID_RI_LOGICAL_MAXIMUM(8, 0xFF),
-		HID_RI_REPORT_SIZE(8, 0x08),
-		HID_RI_REPORT_COUNT(8, LED_REPORT_SIZE),
 		HID_RI_INPUT(8, HID_IOF_DATA | HID_IOF_VARIABLE | HID_IOF_ABSOLUTE),
-		HID_RI_USAGE(8, 0x03), /* Vendor Usage 3 */
-		HID_RI_LOGICAL_MINIMUM(8, 0x00),
-		HID_RI_LOGICAL_MAXIMUM(8, 0xFF),
-		HID_RI_REPORT_SIZE(8, 0x08),
 		HID_RI_REPORT_COUNT(8, LED_REPORT_SIZE),
+		HID_RI_USAGE(8, 0x03), /* Vendor Usage 3 */
 		HID_RI_OUTPUT(8, HID_IOF_DATA | HID_IOF_VARIABLE | HID_IOF_ABSOLUTE | HID_IOF_NON_VOLATILE),
 	HID_RI_END_COLLECTION(0),
 };
@@ -338,14 +353,14 @@ static const USB_Descriptor_HIDReport_Datatype_t PROGMEM LEDReport[] =
 static USB_Descriptor_Device_t DeviceDescriptor =
 {
 	.Header                 = {.Size = sizeof(USB_Descriptor_Device_t), .Type = DTYPE_Device},
-	.USBSpecification       = VERSION_BCD(01.10),
+	.USBSpecification       = XYZ_TO_BCD(1,1,0),
 	.Class                  = USB_CSCP_NoDeviceClass,
 	.SubClass               = USB_CSCP_NoDeviceSubclass,
 	.Protocol               = USB_CSCP_NoDeviceProtocol,
 	.Endpoint0Size          = FIXED_CONTROL_ENDPOINT_SIZE,
 	.VendorID               = USB_VENDOR_ID,
 	.ProductID              = USB_PRODUCT_ID,
-	.ReleaseNumber          = USB_VERSION_BCD,
+	.ReleaseNumber          = 0,
 	.ManufacturerStrIndex   = ManufacturerString_id,
 	.ProductStrIndex        = ProductString_id,
 	.SerialNumStrIndex      = SerialNumberString_id,
@@ -381,10 +396,7 @@ static struct {
 
 void SetProductID(uint16_t id)
 {
-	DeviceDescriptor.ProductID = id;
-
 	uint8_t const ledwiz_id_minus1 = id & 0xFF;
-	uint16_t const ver = USB_VERSION_BCD;
 	uint16_t const flags = 
 		#if defined(ENABLE_PANEL_DEVICE)
 		(config_mask_joysticks & NUM_JOYSTICKS) |
@@ -396,18 +408,23 @@ void SetProductID(uint16_t id)
 		config_flag_led |
 		#endif
 		0;
+	uint8_t const ver = LWCLONEU2_VERSION;
+	uint16_t const rel = ((uint16_t)(ver & 0x1F)  << 8) | flags; // up to 13 bits (maximum is 9999)
+
+	DeviceDescriptor.ProductID = id;
+	DeviceDescriptor.ReleaseNumber = NUMBER_TO_BCD(rel);
 
 	uint16_t * const c = &SerialNumberString.UnicodeString[0];
-	c[0] = 'L';
-	c[1] = 'W';
-	c[2] = 'C';
-	c[3] = '-';
-	c[4] = '0' + (((ver >>  8) & 0xFF) / 10);
-	c[5] = '0' + (((ver >>  8) & 0xFF) % 10);
-	c[6] = '0' + ((ver >>  4) & 0x0F);
-	c[7] = '0' + ((ver >>  0) & 0x0F);
-	c[8] = '-';
-	c[9] = toHex((ledwiz_id_minus1 >> 4) & 0x0F);
+	c[0]  = 'L';
+	c[1]  = 'W';
+	c[2]  = 'C';
+	c[3]  = '-';
+	c[4]  = '0' + (((ver >>  8) & 0xFF) / 10);
+	c[5]  = '0' + (((ver >>  8) & 0xFF) % 10);
+	c[6]  = '0' + ((ver >>  4) & 0x0F);
+	c[7]  = '0' + ((ver >>  0) & 0x0F);
+	c[8]  = '-';
+	c[9]  = toHex((ledwiz_id_minus1 >> 4) & 0x0F);
 	c[10] = toHex((ledwiz_id_minus1 >> 0) & 0x0F);
 	c[11] = '-';
 	c[12] = toHex((flags >> 8) & 0x0F);
@@ -422,6 +439,7 @@ void SetProductID(uint16_t id)
  */
 
 typedef enum {
+	IFACENUMBER_MISC,
 	#if defined(ENABLE_PANEL_DEVICE)
 	IFACENUMBER_PANEL,
 	#endif
@@ -444,6 +462,37 @@ static const USB_Descriptor_Configuration_t PROGMEM ConfigurationDescriptor =
 		.MaxPowerConsumption    = USB_CONFIG_POWER_MA(100)
 	},
 
+	.HID_MiscInterface =
+	{
+		.Header                 = {.Size = sizeof(USB_Descriptor_Interface_t), .Type = DTYPE_Interface},
+		.InterfaceNumber        = IFACENUMBER_MISC,
+		.AlternateSetting       = 0x00,
+		.TotalEndpoints         = 1,
+		.Class                  = HID_CSCP_HIDClass,
+		.SubClass               = HID_CSCP_NonBootSubclass,
+		.Protocol               = HID_CSCP_NonBootProtocol,
+		.InterfaceStrIndex      = NO_DESCRIPTOR
+	},
+
+	.HID_MiscHID =
+	{
+		.Header                 = {.Size = sizeof(USB_HID_Descriptor_HID_t), .Type = HID_DTYPE_HID},
+		.HIDSpec                = XYZ_TO_BCD(1,1,1),
+		.CountryCode            = 0x00,
+		.TotalReportDescriptors = 1,
+		.HIDReportType          = HID_DTYPE_Report,
+		.HIDReportLength        = sizeof(LEDReport)
+	},
+
+	.HID_MiscReportINEndpoint =
+	{
+		.Header                 = {.Size = sizeof(USB_Descriptor_Endpoint_t), .Type = DTYPE_Endpoint},
+		.EndpointAddress        = MISC_EPADDR,
+		.Attributes             = (EP_TYPE_INTERRUPT | ENDPOINT_ATTR_NO_SYNC | ENDPOINT_USAGE_DATA),
+		.EndpointSize           = MISC_EPSIZE,
+		.PollingIntervalMS      = MISC_INTERVAL_MS
+	},
+
 	#if defined(ENABLE_PANEL_DEVICE)
 	.HID_PanelInterface =
 	{
@@ -460,7 +509,7 @@ static const USB_Descriptor_Configuration_t PROGMEM ConfigurationDescriptor =
 	.HID_PanelHID =
 	{
 		.Header                 = {.Size = sizeof(USB_HID_Descriptor_HID_t), .Type = HID_DTYPE_HID},
-		.HIDSpec                = VERSION_BCD(01.11),
+		.HIDSpec                = XYZ_TO_BCD(1,1,1),
 		.CountryCode            = 0x00,
 		.TotalReportDescriptors = 1,
 		.HIDReportType          = HID_DTYPE_Report,
@@ -473,7 +522,7 @@ static const USB_Descriptor_Configuration_t PROGMEM ConfigurationDescriptor =
 		.EndpointAddress        = PANEL_EPADDR,
 		.Attributes             = (EP_TYPE_INTERRUPT | ENDPOINT_ATTR_NO_SYNC | ENDPOINT_USAGE_DATA),
 		.EndpointSize           = PANEL_EPSIZE,
-		.PollingIntervalMS      = 2
+		.PollingIntervalMS      = PANEL_INTERVAL_MS
 	},
 	#endif
 
@@ -493,7 +542,7 @@ static const USB_Descriptor_Configuration_t PROGMEM ConfigurationDescriptor =
 	.HID_LEDHID =
 	{
 		.Header                 = {.Size = sizeof(USB_HID_Descriptor_HID_t), .Type = HID_DTYPE_HID},
-		.HIDSpec                = VERSION_BCD(01.11),
+		.HIDSpec                = XYZ_TO_BCD(1,1,1),
 		.CountryCode            = 0x00,
 		.TotalReportDescriptors = 1,
 		.HIDReportType          = HID_DTYPE_Report,
@@ -506,7 +555,7 @@ static const USB_Descriptor_Configuration_t PROGMEM ConfigurationDescriptor =
 		.EndpointAddress        = LED_EPADDR,
 		.Attributes             = (EP_TYPE_INTERRUPT | ENDPOINT_ATTR_NO_SYNC | ENDPOINT_USAGE_DATA),
 		.EndpointSize           = LED_EPSIZE,
-		.PollingIntervalMS      = 10
+		.PollingIntervalMS      = LED_INTERVAL_MS
 	},
 	#endif
 };
@@ -573,11 +622,18 @@ uint16_t CALLBACK_USB_GetDescriptor(
 			break;
 
 		case DTYPE_HID:
+			if (wIndex == IFACENUMBER_MISC)
+			{
+				Address = &ConfigurationDescriptor.HID_MiscHID;
+				Size    = sizeof(USB_HID_Descriptor_HID_t);
+				break;
+			}
 			#if defined(ENABLE_LED_DEVICE)
 			if (wIndex == IFACENUMBER_LED)
 			{
 				Address = &ConfigurationDescriptor.HID_LEDHID;
 				Size    = sizeof(USB_HID_Descriptor_HID_t);
+				break;
 			}
 			#endif
 			#if defined(ENABLE_PANEL_DEVICE)
@@ -585,16 +641,24 @@ uint16_t CALLBACK_USB_GetDescriptor(
 			{
 				Address = &ConfigurationDescriptor.HID_PanelHID;
 				Size    = sizeof(USB_HID_Descriptor_HID_t);
+				break;
 			}
 			#endif
 			break;
 
 		case DTYPE_Report:
+			if (wIndex == IFACENUMBER_MISC)
+			{
+				Address = &MiscReport;
+				Size    = sizeof(MiscReport);
+				break;
+			}
 			#if defined(ENABLE_LED_DEVICE)
 			if (wIndex == IFACENUMBER_LED)
 			{
 				Address = &LEDReport;
 				Size    = sizeof(LEDReport);
+				break;
 			}
 			#endif
 			#if defined(ENABLE_PANEL_DEVICE)
@@ -602,6 +666,7 @@ uint16_t CALLBACK_USB_GetDescriptor(
 			{
 				Address = &PanelReport;
 				Size    = sizeof(PanelReport);
+				break;
 			}
 			#endif
 		break;

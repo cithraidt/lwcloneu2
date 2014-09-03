@@ -51,11 +51,17 @@
 #include <LUFA/Drivers/USB/USB.h>
 #include <hwconfig.h>
 
-#define VERSION_XYZ_TO_BCD(a,b,c) \
+#define XYZ_TO_BCD(a,b,c) \
 	((uint16_t)(((a)/10) % 10) << 12) | \
 	((uint16_t)((a) % 10) << 8) | \
 	((uint16_t)((b) % 10) << 4) | \
 	((uint16_t)((c) % 10) << 0)
+
+#define NUMBER_TO_BCD(x) \
+	((uint16_t)(((x) / 1000) %   10) << 12) | \
+	((uint16_t)(((x) % 1000) /  100) <<  8) | \
+	((uint16_t)(((x) %  100) /   10) <<  4) | \
+	((uint16_t)(((x) %   10)       ) <<  0)
 
 #if defined(ENABLE_LED_DEVICE)
 #define USB_VENDOR_ID      0xFAFA
@@ -65,7 +71,7 @@
 #define USB_PRODUCT_ID     0x0147
 #endif
 
-#define USB_VERSION_BCD    VERSION_XYZ_TO_BCD(1,0,0)
+#define LWCLONEU2_VERSION   1
 
 
 /* Type Defines: */
@@ -76,6 +82,9 @@
 typedef struct
 {
 	USB_Descriptor_Configuration_Header_t  Config;
+	USB_Descriptor_Interface_t             HID_MiscInterface;
+	USB_HID_Descriptor_HID_t               HID_MiscHID;
+	USB_Descriptor_Endpoint_t              HID_MiscReportINEndpoint;
 	#if defined(ENABLE_PANEL_DEVICE)
 	USB_Descriptor_Interface_t             HID_PanelInterface;
 	USB_HID_Descriptor_HID_t               HID_PanelHID;
@@ -90,12 +99,18 @@ typedef struct
 
 /* Macros: */
 /** Endpoint address of the Panel HID reporting IN endpoint. */
-#define PANEL_EPADDR           (ENDPOINT_DIR_IN | 1)
-#define LED_EPADDR             (ENDPOINT_DIR_IN | 2)
+#define MISC_EPADDR            (ENDPOINT_DIR_IN | 1)
+#define PANEL_EPADDR           (ENDPOINT_DIR_IN | 2)
+#define LED_EPADDR             (ENDPOINT_DIR_IN | 3)
 
 /** Size in bytes of the Panel HID reporting IN endpoint. */
-#define PANEL_EPSIZE           8
-#define LED_EPSIZE             8
+#define MISC_EPSIZE            64
+#define PANEL_EPSIZE            8
+#define LED_EPSIZE             64
+
+#define MISC_INTERVAL_MS   10
+#define PANEL_INTERVAL_MS   2
+#define LED_INTERVAL_MS    10
 
 /** Descriptor header type value, to indicate a HID class HID descriptor. */
 #define DTYPE_HID                 0x21
@@ -112,7 +127,6 @@ uint16_t CALLBACK_USB_GetDescriptor(
 	ATTR_WARN_UNUSED_RESULT ATTR_NON_NULL_PTR_ARG(3);
 
 void SetProductID(uint16_t id);
-
 
 
 #endif
