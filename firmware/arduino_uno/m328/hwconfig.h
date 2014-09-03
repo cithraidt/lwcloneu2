@@ -24,7 +24,7 @@
 #error "invalid CPU clock frequency ==> should be 16 MHZ"
 #endif
 
-#if (MCU != atmega8 || MCU != atmega168 || MCU != atmega328)
+#if !defined(__AVR_ATmega8__) && !defined(__AVR_ATmega168__) && !defined(__AVR_ATmega328__) 
 #error "invalid CPU type ==> should be ATMega8/168/328"
 #endif
 

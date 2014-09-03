@@ -565,6 +565,7 @@ void panel_ScanInput(void)
 	#endif
 }
 
+#if (USE_CONSUMER != 0)
 static uint8_t ReportConsumer(void)
 {
 	uint8_t i;
@@ -587,6 +588,7 @@ static uint8_t ReportConsumer(void)
 
 	return 2;
 }
+#endif
 
 static uint8_t ReportKeyboard(void)
 {

@@ -21,7 +21,7 @@
 #error "invalid CPU clock frequency ==> should be 8 MHZ or 16 MHZ"
 #endif
 
-#if (MCU != atmega32u2)
+#if !defined(__AVR_ATmega32U2__) 
 #error "invalid CPU type ==> should be ATMega32u2"
 #endif
 

@@ -24,7 +24,7 @@
 #error "invalid CPU clock frequency ==> should be 16 MHZ"
 #endif
 
-#if (MCU != atmega2560)
+#if !defined(__AVR_ATmega2560__ )
 #error "invalid CPU type ==> should be ATMega2560"
 #endif
 
