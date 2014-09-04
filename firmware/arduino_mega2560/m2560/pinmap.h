@@ -83,8 +83,6 @@
 	_map_( D, 0,    J2_Button2,      KM_SHIFT_F7       ) /* ( SCL/INT0 )          Digital pin 21 (SCL) */ \
 	_map_( F, 0,    J1_Right,        KEY_RightArrow    ) /* ( ADC0 )              Analog pin 0 */ \
 	_map_( F, 1,    J1_Button1,      KEY_Enter         ) /* ( ADC1 )              Analog pin 1 */ \
-	_map_( F, 2,    J1_Button2,      KEY_Esc           ) /* ( ADC2 )              Analog pin 2 */ \
-	_map_( F, 3,    J1_Button3,      KEY_Tab           ) /* ( ADC3 )              Analog pin 3 */ \
 	_map_( F, 4,    J1_Button4,      0                 ) /* ( ADC4/TMK )          Analog pin 4 */ \
 	_map_( F, 5,    J1_Button5,      0                 ) /* ( ADC5/TMS )          Analog pin 5 */ \
 	_map_( F, 6,    J2_Button1,      KEY_F7            ) /* ( ADC6 )              Analog pin 6 */ \
@@ -97,5 +95,15 @@
 	_map_( K, 5,    J1_Button8,      0                 ) /* ( ADC13/PCINT21 )     Analog pin 13 */ \
 	_map_( K, 6,    J1_Button7,      0                 ) /* ( ADC14/PCINT22 )     Analog pin 14 */ \
 	_map_( K, 7,    J1_Button6,      0                 ) /* ( ADC15/PCINT23 )     Analog pin 15 */ \
+	\
+	/* end */
+
+
+	// (port, pin, mux, value_min, value_max, joyid, axis
+	// for mega2560, mux is 0x00..0x07 => (ADC0..ADC7) and 0x10..0x17 => (ADC8..ADC15)
+#define ADC_MAPPING_TABLE(_map_) \
+	\
+	_map_( F, 2, 0x02, 0.000, 1.000, ID_Joystick2, 0 ) /* Analog Pin 2 */ \
+	_map_( F, 3, 0x03, 0.000, 1.000, ID_Joystick2, 1 ) /* Analog Pin 3 */ \
 	\
 	/* end */
