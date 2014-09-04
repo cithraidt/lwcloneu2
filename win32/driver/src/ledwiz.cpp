@@ -698,19 +698,6 @@ static void lwz_refreshlist_attached(lwz_context_t *h)
 						if (caps.NumberLinkCollectionNodes == 1 &&
 							caps.OutputReportByteLength == 9)
 						{
-							// if this index is already in use, check the UsagePage lower Byte 
-							// and try to register as an additional device
-
-							if (h->devices[indx].hudev != NULL)
-							{
-								USHORT UsagePage = caps.UsagePage;
-								int indx_new = UsagePage & 0xFF;
-
-								if (indx_new >= 0 && indx_new < LWZ_MAX_DEVICES) {
-									indx = indx_new;
-								}
-							}
-
 							if (h->devices[indx].hudev == NULL)
 							{
 								memcpy(&h->devices[indx], &device_tmp, sizeof(device_tmp));
