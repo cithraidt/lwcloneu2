@@ -221,7 +221,20 @@ enum JoystickCodes
 	J4_Button5,
 	J4_Button6,
 	J4_Button7,
-	J4_Button8
+	J4_Button8,
+
+	AG_Left,
+	AG_Right,
+	AG_Up,
+	AG_Down,
+	AG_Button1,
+	AG_Button2,
+	AG_Button3,
+	AG_Button4,
+	AG_Button5,
+	AG_Button6,
+	AG_Button7,
+	AG_Button8
 };
 #define JoyButtonBit(key) (0x01 << (key - J1_Button1))
 
