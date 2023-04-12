@@ -100,7 +100,7 @@
 
 
 	// (port, pin, mux, value_min, value_max, joyid, axis
-	// for mega2560, mux is 0x00..0x07 => (ADC0..ADC7) and 0x10..0x17 => (ADC8..ADC15)
+	// for mega2560, mux is 0x00..0x07 => (ADC0..ADC7) and 0x20..0x27 => (ADC8..ADC15)
 #define ADC_MAPPING_TABLE(_map_) \
 	\
 	_map_( F, 2, 0x02, 0.000, 1.000, ID_Joystick2, 0 ) /* Analog Pin 2 */ \

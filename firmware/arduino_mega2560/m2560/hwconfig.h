@@ -79,12 +79,16 @@ static void inline ADC_init(void)
 		(1 << ADPS2) | (1 << ADPS1) | (1 << ADPS0); // prescaler 128x
 }
 
+// https://ww1.microchip.com/downloads/en/devicedoc/atmel-2549-8-bit-avr-microcontroller-atmega640-1280-1281-2560-2561_datasheet.pdf
+// page 266 : 25.2.1
+#define ADCSRB_MUX5 3
+
 static void inline ADC_setmux(uint8_t mux)
 {
 	ADMUX &= ~0x1F;
 	ADMUX |= mux & 0x1F;
-	ADCSRB &= ~(1 << MUX5);
-	ADCSRB |= (((mux >> 5) & 0x01) << MUX5);
+	ADCSRB &= ~(1 << ADCSRB_MUX5);
+	ADCSRB |= (((mux >> 5) & 0x01) << ADCSRB_MUX5);
 }
 
 #endif
